@@ -1,4 +1,4 @@
-use xitdb::arraylist::{ArrayList, WriteArrayList};
+use xitdb::arraylist::ArrayList;
 use xitdb::core::MemoryCore;
 use xitdb::counted_hashmap::WriteCountedHashMap;
 use xitdb::counted_hashset::WriteCountedHashSet;
@@ -160,7 +160,7 @@ fn hashset_put_get_remove() {
 fn array_append_get_iter() {
     let db = open_mem(106).unwrap();
     db.run_context(|w| {
-        let a = WriteArrayList::new_write(w)?;
+        let a = ArrayList::new_write(w)?;
         for i in 0..100u64 {
             a.append(uint(i))?;
         }
@@ -168,7 +168,7 @@ fn array_append_get_iter() {
     })
     .unwrap();
     db.run_context(|w| {
-        let a = WriteArrayList::new_write(w)?;
+        let a = ArrayList::new_write(w)?;
         assert_eq!(a.count()?, 100);
         assert_eq!(a.get(0)?.unwrap().read_uint()?, 0);
         assert_eq!(a.get(-1)?.unwrap().read_uint()?, 99);
@@ -221,7 +221,7 @@ fn map_iter_yields_all_entries() {
 fn writer_streams_large_value_then_reader_counts_lines() {
     let db = open_mem(108).unwrap();
     db.run_context(|w| {
-        let a = WriteArrayList::new_write(w)?;
+        let a = ArrayList::new_write(w)?;
         let ac = a.append_cursor()?;
         let mut writer = ac.writer(&mut [0u8; 64])?;
         for _ in 0..50 {
@@ -232,7 +232,7 @@ fn writer_streams_large_value_then_reader_counts_lines() {
     })
     .unwrap();
     db.run_context(|w| {
-        let a = WriteArrayList::new_write(w)?;
+        let a = ArrayList::new_write(w)?;
         let cursor = a.get(0)?.unwrap();
         let mut reader = cursor.reader(&mut [0u8; 16])?;
         let all = reader.read_all()?;
@@ -254,11 +254,11 @@ fn clone_freeze_keeps_source_immutable() {
     let db = open_mem(109).unwrap();
     // tx1: history = [moment { fruits: [apple, pear, grape] }]
     db.run_context(|w| {
-        let history = WriteArrayList::new_write(w)?;
+        let history = ArrayList::new_write(w)?;
         history.append_context(Writeable::None, |mc| {
             let m = WriteHashMap::new_write(mc)?;
             let fc = m.put_cursor("fruits")?;
-            let fruits = WriteArrayList::new_write(&fc)?;
+            let fruits = ArrayList::new_write(&fc)?;
             fruits.append(Writeable::Bytes(str_bytes("apple")))?;
             fruits.append(Writeable::Bytes(str_bytes("pear")))?;
             fruits.append(Writeable::Bytes(str_bytes("grape")))?;
@@ -268,7 +268,7 @@ fn clone_freeze_keeps_source_immutable() {
     .unwrap();
     // tx2: moment = clone; food starts as fruits, frozen, then extended.
     db.run_context(|w| {
-        let history = WriteArrayList::new_write(w)?;
+        let history = ArrayList::new_write(w)?;
         let prev = history.get_slot(-1)?;
         history.append_context(Writeable::Slot(prev), |mc| {
             let m = WriteHashMap::new_write(mc)?;
@@ -276,7 +276,7 @@ fn clone_freeze_keeps_source_immutable() {
             let food_cursor = m.put_cursor("food")?;
             food_cursor.write(Writeable::Slot(fruit_slot))?;
             food_cursor.freeze()?;
-            let food = WriteArrayList::new_write(&food_cursor)?;
+            let food = ArrayList::new_write(&food_cursor)?;
             food.append(Writeable::Bytes(str_bytes("eggs")))?;
             food.append(Writeable::Bytes(str_bytes("rice")))?;
             food.append(Writeable::Bytes(str_bytes("fish")))?;
@@ -285,7 +285,7 @@ fn clone_freeze_keeps_source_immutable() {
     })
     .unwrap();
     db.run_context(|w| {
-        let history = WriteArrayList::new_write(w)?;
+        let history = ArrayList::new_write(w)?;
         let mc = history.get(-1)?.unwrap();
         let m = ReadHashMap::new(mc)?;
         let food = ArrayList::new(m.get("food")?.unwrap())?;
@@ -318,7 +318,7 @@ fn init_existing_root_commits_nothing() {
     let db = open_mem(111).unwrap();
     // Empty to array-list commits the fresh header + block + trailer.
     db.run_context(|w| {
-        let _a = WriteArrayList::new_write(w)?;
+        let _a = ArrayList::new_write(w)?;
         Ok(())
     })
     .unwrap();
@@ -327,7 +327,7 @@ fn init_existing_root_commits_nothing() {
     // nothing (Go's free re-init shortcut).
     let before = db.committed_size().unwrap();
     let w = db.root_cursor();
-    let _a = WriteArrayList::new_write(&w).unwrap();
+    let _a = ArrayList::new_write(&w).unwrap();
     assert_eq!(db.committed_size().unwrap(), before);
 }
 

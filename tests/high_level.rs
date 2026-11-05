@@ -6,7 +6,7 @@
 use std::fs::OpenOptions;
 use std::sync::{Arc, Barrier};
 
-use xitdb::arraylist::{ArrayList, WriteArrayList};
+use xitdb::arraylist::ArrayList;
 use xitdb::core::{BufferedFileCore, FileCore, MemoryCore};
 use xitdb::cursor::Writeable;
 use xitdb::database::{Database, InitOpts, ROOT_HEADER_END, ROOT_HEADER_START};
@@ -113,7 +113,7 @@ fn file_backends_agree_with_memory() {
     let fdb: Database<FileCore, Sha1Hasher> =
         Database::open(open_file_core(&path).unwrap(), Sha1Hasher, mem_opts(503)).unwrap();
     fdb.run_context(|w| {
-        let h = WriteArrayList::new_write(w)?;
+        let h = ArrayList::new_write(w)?;
         h.append_context(Writeable::None, |mc| {
             let m = WriteHashMap::new_write(mc)?;
             m.put("k", uint(7))?;
@@ -122,7 +122,7 @@ fn file_backends_agree_with_memory() {
     })
     .unwrap();
     fdb.run_context(|w| {
-        let h = WriteArrayList::new_write(w)?;
+        let h = ArrayList::new_write(w)?;
         let mc = h.get(0).unwrap().unwrap();
         let m = HashMap::new(mc).unwrap();
         assert_eq!(m.get("k").unwrap().unwrap().read_uint().unwrap(), 7);
@@ -139,7 +139,7 @@ fn file_backends_agree_with_memory() {
     )
     .unwrap();
     bdb.run_context(|w| {
-        let h = WriteArrayList::new_write(w)?;
+        let h = ArrayList::new_write(w)?;
         h.append_context(Writeable::None, |mc| {
             let m = WriteHashMap::new_write(mc)?;
             m.put("k", uint(7))?;
@@ -148,7 +148,7 @@ fn file_backends_agree_with_memory() {
     })
     .unwrap();
     bdb.run_context(|w| {
-        let h = WriteArrayList::new_write(w)?;
+        let h = ArrayList::new_write(w)?;
         let mc = h.get(0).unwrap().unwrap();
         let m = HashMap::new(mc).unwrap();
         assert_eq!(m.get("k").unwrap().unwrap().read_uint().unwrap(), 7);
@@ -172,9 +172,7 @@ fn hash_map_root_with_append_only_replication() {
     assert_eq!(size_after_init, source.committed_size().unwrap());
 
     // Nor can the root be initialized as another type.
-    let err = WriteArrayList::new_write(&source.root_cursor())
-        .err()
-        .unwrap();
+    let err = ArrayList::new_write(&source.root_cursor()).err().unwrap();
     assert!(matches!(err, Error::UnexpectedTag));
     assert_eq!(size_after_init, source.committed_size().unwrap());
 
@@ -273,7 +271,7 @@ fn multithreaded_reads_alongside_writes() {
         let db: Database<FileCore, Sha1Hasher> =
             Database::open(open_file_core(&path).unwrap(), Sha1Hasher, mem_opts(507)).unwrap();
         db.run_context(|w| {
-            let h = WriteArrayList::new_write(w)?;
+            let h = ArrayList::new_write(w)?;
             h.append_context(Writeable::None, |mc| {
                 let m = WriteHashMap::new_write(mc)?;
                 m.put("foo", Writeable::Bytes(b"foo".to_vec()))?;
@@ -293,7 +291,7 @@ fn multithreaded_reads_alongside_writes() {
                     Database::open(FileCore::new(file, false), Sha1Hasher, mem_opts(507)).unwrap();
                 barrier.wait();
                 let root = db.root_cursor();
-                let history = WriteArrayList::new_write(&root).unwrap();
+                let history = ArrayList::new_write(&root).unwrap();
                 let mc = history.get(0).unwrap().unwrap();
                 let m = HashMap::new(mc).unwrap();
                 let v = m.get("foo").unwrap().unwrap().read_bytes_alloc().unwrap();
@@ -313,11 +311,11 @@ fn all_from_seeks_past_256_element_tiers() {
     // 200 items force a second radix tier (16^2) and B-tree depth.
     let db = open_mem(508).unwrap();
     db.run_context(|w| {
-        let h = WriteArrayList::new_write(w)?;
+        let h = ArrayList::new_write(w)?;
         h.append_context(Writeable::None, |mc| {
             let m = WriteHashMap::new_write(mc)?;
             let lc = m.put_cursor("list")?;
-            let list = WriteArrayList::new_write(&lc)?;
+            let list = ArrayList::new_write(&lc)?;
             for i in 0..200u64 {
                 list.append(uint(i))?;
             }
@@ -331,7 +329,7 @@ fn all_from_seeks_past_256_element_tiers() {
     })
     .unwrap();
     db.run_context(|w| {
-        let h = WriteArrayList::new_write(w)?;
+        let h = ArrayList::new_write(w)?;
         let mc = h.get(0).unwrap().unwrap();
         let m = HashMap::new(mc).unwrap();
         let list = ArrayList::new(m.get("list")?.unwrap())?;

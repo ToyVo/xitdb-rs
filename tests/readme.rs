@@ -2,9 +2,9 @@
 //! same calls as the documented snippets so they cannot rot.
 use std::cell::RefCell;
 
-use xitdb::arraylist::{ReadArrayList, WriteArrayList};
+use xitdb::arraylist::ArrayList;
 use xitdb::core::{BufferedFileCore, Core, MemoryCore};
-use xitdb::cursor::{WriteCursor, Writeable};
+use xitdb::cursor::{ReadOnly, WriteCursor, Writeable};
 use xitdb::database::{Database, InitOpts};
 use xitdb::error::Error;
 use xitdb::hasher::{Hasher, Sha1Hasher, bytes_to_id, id_to_bytes};
@@ -54,18 +54,18 @@ fn open_file(
 
 /// The README example: one moment holding `foo`, `bar`, `fruits`, `people`.
 fn seed_example(w: &WriteCursor<'_, impl Core, impl Hasher>) -> Result<(), Error> {
-    let history = WriteArrayList::new_write(w)?;
+    let history = ArrayList::new_write(w)?;
     history.append_context(Writeable::None, |mc| {
         let moment = WriteHashMap::new_write(mc)?;
         moment.put("foo", Writeable::Bytes(b"foo".to_vec()))?;
         moment.put("bar", Writeable::Bytes(b"bar".to_vec()))?;
         let fruits_cursor = moment.put_cursor("fruits")?;
-        let fruits = WriteArrayList::new_write(&fruits_cursor)?;
+        let fruits = ArrayList::new_write(&fruits_cursor)?;
         fruits.append(Writeable::Bytes(b"apple".to_vec()))?;
         fruits.append(Writeable::Bytes(b"pear".to_vec()))?;
         fruits.append(Writeable::Bytes(b"grape".to_vec()))?;
         let people_cursor = moment.put_cursor("people")?;
-        let people = WriteArrayList::new_write(&people_cursor)?;
+        let people = ArrayList::new_write(&people_cursor)?;
         let alice_cursor = people.append_cursor()?;
         let alice = WriteHashMap::new_write(&alice_cursor)?;
         alice.put("name", Writeable::Bytes(b"Alice".to_vec()))?;
@@ -82,16 +82,16 @@ fn latest_moment(
     db: &Database<MemoryCore, Sha1Hasher>,
 ) -> Result<ReadHashMap<'_, MemoryCore, Sha1Hasher>, Error> {
     let cursor = db.root_cursor();
-    let history = WriteArrayList::new_write(&cursor)?;
+    let history = ArrayList::new_write(&cursor)?;
     let moment = history.get(-1)?.ok_or(Error::KeyNotFound)?;
     ReadHashMap::new(moment)
 }
 
 fn people_in<'a>(
     moment: &ReadHashMap<'a, MemoryCore, Sha1Hasher>,
-) -> Result<ReadArrayList<'a, MemoryCore, Sha1Hasher>, Error> {
+) -> Result<ArrayList<'a, MemoryCore, Sha1Hasher, ReadOnly>, Error> {
     let cursor = moment.get("people")?.ok_or(Error::KeyNotFound)?;
-    ReadArrayList::new(cursor)
+    ArrayList::new(cursor)
 }
 
 fn committed_bytes(db: &Database<MemoryCore, Sha1Hasher>) -> Result<Vec<u8>, Error> {
@@ -108,12 +108,12 @@ fn example() {
     db.run_context(seed_example).unwrap();
 
     let cursor = db.root_cursor();
-    let history = WriteArrayList::new_write(&cursor).unwrap();
+    let history = ArrayList::new_write(&cursor).unwrap();
     let moment = ReadHashMap::new(history.get(-1).unwrap().unwrap()).unwrap();
     let foo = moment.get("foo").unwrap().unwrap();
     assert_eq!(foo.read_bytes_alloc().unwrap(), b"foo");
 
-    let fruits = ReadArrayList::new(moment.get("fruits").unwrap().unwrap()).unwrap();
+    let fruits = ArrayList::new(moment.get("fruits").unwrap().unwrap()).unwrap();
     let apple = fruits.get(0).unwrap().unwrap();
     assert_eq!(apple.read_bytes_alloc().unwrap(), b"apple");
 
@@ -161,15 +161,15 @@ fn clone_food() {
     let db = open_mem(903).unwrap();
     db.run_context(seed_example).unwrap();
     db.run_context(|w| {
-        let history = WriteArrayList::new_write(w)?;
+        let history = ArrayList::new_write(w)?;
         let prev = history.get_slot(-1)?;
         history.append_context(Writeable::Slot(prev), |mc| {
             let moment = WriteHashMap::new_write(mc)?;
             let fruits = moment.get("fruits")?.ok_or(Error::KeyNotFound)?;
-            let fruits_list = ReadArrayList::new(fruits)?;
+            let fruits_list = ArrayList::new(fruits)?;
             let food_cursor = moment.put_cursor("food")?;
             food_cursor.write(Writeable::Slot(fruits_list.slot()?))?;
-            let food = WriteArrayList::new_write(&food_cursor)?;
+            let food = ArrayList::new_write(&food_cursor)?;
             food.append(Writeable::Bytes(b"eggs".to_vec()))?;
             food.append(Writeable::Bytes(b"rice".to_vec()))?;
             food.append(Writeable::Bytes(b"fish".to_vec()))?;
@@ -179,9 +179,9 @@ fn clone_food() {
     .unwrap();
 
     let moment = latest_moment(&db).unwrap();
-    let food = ReadArrayList::new(moment.get("food").unwrap().unwrap()).unwrap();
+    let food = ArrayList::new(moment.get("food").unwrap().unwrap()).unwrap();
     assert_eq!(food.count().unwrap(), 6);
-    let fruits = ReadArrayList::new(moment.get("fruits").unwrap().unwrap()).unwrap();
+    let fruits = ArrayList::new(moment.get("fruits").unwrap().unwrap()).unwrap();
     assert_eq!(fruits.count().unwrap(), 3);
 }
 
@@ -190,17 +190,17 @@ fn clone_same_transaction_sees_writes() {
     let db = open_mem(904).unwrap();
     db.run_context(seed_example).unwrap();
     db.run_context(|w| {
-        let history = WriteArrayList::new_write(w)?;
+        let history = ArrayList::new_write(w)?;
         let prev = history.get_slot(-1)?;
         history.append_context(Writeable::Slot(prev), |mc| {
             let moment = WriteHashMap::new_write(mc)?;
             let big_cursor = moment.put_cursor("big-cities")?;
-            let big = WriteArrayList::new_write(&big_cursor)?;
+            let big = ArrayList::new_write(&big_cursor)?;
             big.append(Writeable::Bytes(b"New York, NY".to_vec()))?;
             big.append(Writeable::Bytes(b"Los Angeles, CA".to_vec()))?;
             let cities_cursor = moment.put_cursor("cities")?;
             cities_cursor.write(Writeable::Slot(big.slot()?))?;
-            let cities = WriteArrayList::new_write(&cities_cursor)?;
+            let cities = ArrayList::new_write(&cities_cursor)?;
             cities.append(Writeable::Bytes(b"Charleston, SC".to_vec()))?;
             cities.append(Writeable::Bytes(b"Louisville, KY".to_vec()))?;
             Ok(())
@@ -211,9 +211,9 @@ fn clone_same_transaction_sees_writes() {
     // Same-transaction data is temporarily mutable, so the clone saw the
     // later appends too: both lists hold all four cities.
     let moment = latest_moment(&db).unwrap();
-    let cities = ReadArrayList::new(moment.get("cities").unwrap().unwrap()).unwrap();
+    let cities = ArrayList::new(moment.get("cities").unwrap().unwrap()).unwrap();
     assert_eq!(cities.count().unwrap(), 4);
-    let big = ReadArrayList::new(moment.get("big-cities").unwrap().unwrap()).unwrap();
+    let big = ArrayList::new(moment.get("big-cities").unwrap().unwrap()).unwrap();
     assert_eq!(big.count().unwrap(), 4);
 }
 
@@ -222,17 +222,17 @@ fn undo_and_freeze() {
     let db = open_mem(905).unwrap();
     db.run_context(seed_example).unwrap();
     let cursor = db.root_cursor();
-    let history = WriteArrayList::new_write(&cursor).unwrap();
+    let history = ArrayList::new_write(&cursor).unwrap();
     let saved_index = i64::try_from(history.count().unwrap().checked_sub(1).unwrap()).unwrap();
 
     // The surprising transaction from the previous test, then undo it.
     db.run_context(|w| {
-        let history = WriteArrayList::new_write(w)?;
+        let history = ArrayList::new_write(w)?;
         let prev = history.get_slot(-1)?;
         history.append_context(Writeable::Slot(prev), |mc| {
             let moment = WriteHashMap::new_write(mc)?;
             let big_cursor = moment.put_cursor("big-cities")?;
-            let big = WriteArrayList::new_write(&big_cursor)?;
+            let big = ArrayList::new_write(&big_cursor)?;
             big.append(Writeable::Bytes(b"New York, NY".to_vec()))?;
             let cities_cursor = moment.put_cursor("cities")?;
             cities_cursor.write(Writeable::Slot(big.slot()?))?;
@@ -241,7 +241,7 @@ fn undo_and_freeze() {
     })
     .unwrap();
     db.run_context(|w| {
-        let history = WriteArrayList::new_write(w)?;
+        let history = ArrayList::new_write(w)?;
         let slot = history.get_slot(saved_index)?;
         history.append(Writeable::Slot(slot))?;
         Ok(())
@@ -251,18 +251,18 @@ fn undo_and_freeze() {
     // Redo with `freeze`: writes through `cities` copy instead of
     // mutating `big-cities`.
     db.run_context(|w| {
-        let history = WriteArrayList::new_write(w)?;
+        let history = ArrayList::new_write(w)?;
         let prev = history.get_slot(-1)?;
         history.append_context(Writeable::Slot(prev), |mc| {
             let moment = WriteHashMap::new_write(mc)?;
             let big_cursor = moment.put_cursor("big-cities")?;
-            let big = WriteArrayList::new_write(&big_cursor)?;
+            let big = ArrayList::new_write(&big_cursor)?;
             big.append(Writeable::Bytes(b"New York, NY".to_vec()))?;
             big.append(Writeable::Bytes(b"Los Angeles, CA".to_vec()))?;
             let cities_cursor = moment.put_cursor("cities")?;
             cities_cursor.write(Writeable::Slot(big.slot()?))?;
             cities_cursor.freeze()?;
-            let cities = WriteArrayList::new_write(&cities_cursor)?;
+            let cities = ArrayList::new_write(&cities_cursor)?;
             cities.append(Writeable::Bytes(b"Charleston, SC".to_vec()))?;
             cities.append(Writeable::Bytes(b"Louisville, KY".to_vec()))?;
             Ok(())
@@ -271,9 +271,9 @@ fn undo_and_freeze() {
     .unwrap();
 
     let moment = latest_moment(&db).unwrap();
-    let cities = ReadArrayList::new(moment.get("cities").unwrap().unwrap()).unwrap();
+    let cities = ArrayList::new(moment.get("cities").unwrap().unwrap()).unwrap();
     assert_eq!(cities.count().unwrap(), 4);
-    let big = ReadArrayList::new(moment.get("big-cities").unwrap().unwrap()).unwrap();
+    let big = ArrayList::new(moment.get("big-cities").unwrap().unwrap()).unwrap();
     assert_eq!(big.count().unwrap(), 2);
 }
 
@@ -474,7 +474,7 @@ fn compaction() {
         .unwrap();
     compacted
         .run_context(|w| {
-            let history = WriteArrayList::new_write(w)?;
+            let history = ArrayList::new_write(w)?;
             assert_eq!(history.count()?, 1);
             Ok(())
         })
@@ -503,7 +503,7 @@ fn compaction() {
     let rebuilt = cell.into_inner().unwrap();
     rebuilt
         .run_context(|w| {
-            let history = WriteArrayList::new_write(w)?;
+            let history = ArrayList::new_write(w)?;
             assert_eq!(history.count()?, 1);
             Ok(())
         })

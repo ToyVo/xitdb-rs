@@ -7,7 +7,7 @@
 
 use std::fs::File;
 
-use xitdb::arraylist::{ArrayList, WriteArrayList};
+use xitdb::arraylist::ArrayList;
 use xitdb::core::{Core, FileCore};
 use xitdb::counted_hashmap::CountedHashMap;
 use xitdb::counted_hashset::CountedHashSet;
@@ -273,7 +273,7 @@ fn reads_go_golden_fixture() {
     )
     .unwrap();
     db.run_context(|w| {
-        let history = WriteArrayList::new_write(w)?;
+        let history = ArrayList::new_write(w)?;
         let mc = history.put_cursor(0)?;
         let m = WriteHashMap::new_write(&mc)?;
         m.put("probe", Writeable::Uint(1))?;

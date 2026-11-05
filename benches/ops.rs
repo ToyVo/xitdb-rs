@@ -4,7 +4,7 @@
 //! Run with `cargo bench`. CI only compile-checks these
 //! (`cargo bench --no-run`).
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
-use xitdb::arraylist::WriteArrayList;
+use xitdb::arraylist::ArrayList;
 use xitdb::core::{BufferedFileCore, MemoryCore};
 use xitdb::cursor::Writeable;
 use xitdb::database::{Database, InitOpts};
@@ -88,7 +88,7 @@ fn arraylist_append(c: &mut Criterion) {
                 return;
             };
             let outcome = db.run_context(|w| {
-                let list = WriteArrayList::new_write(w)?;
+                let list = ArrayList::new_write(w)?;
                 for i in 0..1000u64 {
                     list.append(Writeable::Uint(i))?;
                 }
@@ -107,7 +107,7 @@ fn arraylist_iterate(c: &mut Criterion) {
         return;
     };
     let seeded = db.run_context(|w| {
-        let list = WriteArrayList::new_write(w)?;
+        let list = ArrayList::new_write(w)?;
         for i in 0..10_000u64 {
             list.append(Writeable::Uint(i))?;
         }
@@ -120,7 +120,7 @@ fn arraylist_iterate(c: &mut Criterion) {
     c.bench_function("arraylist_iterate_10000", |b| {
         b.iter(|| {
             let cursor = db.root_cursor();
-            let list = match WriteArrayList::new_write(&cursor) {
+            let list = match ArrayList::new_write(&cursor) {
                 Ok(list) => list,
                 Err(error) => {
                     eprintln!("bench open failed: {error}");
@@ -216,7 +216,7 @@ fn commit_moment(c: &mut Criterion) {
                     moment.put(&format!("key-{i}"), Writeable::Uint(i))?;
                 }
                 let list_cursor = moment.put_cursor("list")?;
-                let list = WriteArrayList::new_write(&list_cursor)?;
+                let list = ArrayList::new_write(&list_cursor)?;
                 for i in 0..10u64 {
                     list.append(Writeable::Uint(i))?;
                 }

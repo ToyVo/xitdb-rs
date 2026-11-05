@@ -1,7 +1,7 @@
 //! Writes `tests/fixtures/rust-golden.db` (fixed file id) for the Go
 //! reverse-check in `scripts/gen-fixtures.sh`.
 
-use xitdb::arraylist::WriteArrayList;
+use xitdb::arraylist::ArrayList;
 use xitdb::core::FileCore;
 use xitdb::cursor::Writeable;
 use xitdb::database::{Database, InitOpts};
@@ -33,7 +33,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         },
     )?;
     db.run_context(|w| {
-        let history = WriteArrayList::new_write(w)?;
+        let history = ArrayList::new_write(w)?;
         history.append_context(Writeable::None, |mc| {
             let m = WriteHashMap::new_write(mc)?;
             m.put("name", Writeable::Bytes(b"rust".to_vec()))?;
@@ -46,7 +46,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 },
             )?;
             let lc = m.put_cursor("list")?;
-            let list = WriteArrayList::new_write(&lc)?;
+            let list = ArrayList::new_write(&lc)?;
             list.append(Writeable::Uint(1))?;
             list.append(Writeable::Uint(2))?;
             let sc = m.put_cursor("sorted")?;

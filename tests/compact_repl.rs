@@ -1,6 +1,6 @@
 use std::cell::RefCell;
 
-use xitdb::arraylist::{ArrayList, WriteArrayList};
+use xitdb::arraylist::ArrayList;
 use xitdb::core::MemoryCore;
 use xitdb::cursor::Writeable;
 use xitdb::database::{Database, InitOpts};
@@ -28,7 +28,7 @@ const fn uint(n: u64) -> Writeable {
 fn build_history(db: &Database<MemoryCore, Sha1Hasher>, moments: u64) -> Result<(), Error> {
     for m in 0..moments {
         db.run_context(|w| {
-            let history = WriteArrayList::new_write(w)?;
+            let history = ArrayList::new_write(w)?;
             let prev = history.get_slot(-1)?;
             history.append_context(Writeable::Slot(prev), |mc| {
                 let moment = WriteHashMap::new_write(mc)?;
@@ -56,7 +56,7 @@ fn compact_keeps_latest_moment_only() {
         .unwrap();
     compacted
         .run_context(|w| {
-            let history = WriteArrayList::new_write(w)?;
+            let history = ArrayList::new_write(w)?;
             assert_eq!(history.count()?, 1);
             let mc = history.get(0)?.unwrap();
             let moment = ReadHashMap::new(mc)?;
@@ -80,11 +80,11 @@ fn compact_preserves_shared_substructure() {
     let db = open_mem(303).unwrap();
     // Moment with fruits cloned to food (shared blocks), like the T4 test.
     db.run_context(|w| {
-        let history = WriteArrayList::new_write(w)?;
+        let history = ArrayList::new_write(w)?;
         history.append_context(Writeable::None, |mc| {
             let m = WriteHashMap::new_write(mc)?;
             let fc = m.put_cursor("fruits")?;
-            let fruits = WriteArrayList::new_write(&fc)?;
+            let fruits = ArrayList::new_write(&fc)?;
             fruits.append(Writeable::Bytes(b"apple".to_vec()))?;
             let food = m.put_cursor("food")?;
             food.write(Writeable::Slot(fruits.slot()?))?;
@@ -103,7 +103,7 @@ fn compact_preserves_shared_substructure() {
         .unwrap();
     compacted
         .run_context(|w| {
-            let history = WriteArrayList::new_write(w)?;
+            let history = ArrayList::new_write(w)?;
             let mc = history.get(0)?.unwrap();
             let m = ReadHashMap::new(mc)?;
             let fruits = ArrayList::new(m.get("fruits")?.unwrap())?;
@@ -191,7 +191,7 @@ fn offset_map_backends_agree() {
     for target in [&a, &b] {
         target
             .run_context(|w| {
-                let history = WriteArrayList::new_write(w)?;
+                let history = ArrayList::new_write(w)?;
                 assert_eq!(history.count()?, 1);
                 Ok(())
             })
@@ -238,7 +238,7 @@ fn replication_incremental_and_full_copy() {
     for target in [&db, &replica] {
         target
             .run_context(|w| {
-                let history = WriteArrayList::new_write(w)?;
+                let history = ArrayList::new_write(w)?;
                 assert_eq!(history.count()?, 3);
                 Ok(())
             })
@@ -266,7 +266,7 @@ fn interrupted_full_copy_recovers_on_next_sync() {
         .unwrap();
     replica
         .run_context(|w| {
-            let history = WriteArrayList::new_write(w)?;
+            let history = ArrayList::new_write(w)?;
             assert_eq!(history.count()?, 1);
             Ok(())
         })
@@ -288,7 +288,7 @@ fn compact_rejects_nonempty_target_and_handles_empty_source() {
         .unwrap();
     fresh
         .run_context(|w| {
-            let history = WriteArrayList::new_write(w)?;
+            let history = ArrayList::new_write(w)?;
             assert_eq!(history.count()?, 0);
             Ok(())
         })

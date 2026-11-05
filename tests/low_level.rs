@@ -2,7 +2,7 @@
 //! frozen/expired writers at slot granularity, panic rollback, raw core
 //! semantics, header validation, and sized B-tree stress.
 
-use xitdb::arraylist::WriteArrayList;
+use xitdb::arraylist::ArrayList;
 use xitdb::core::{Core, MemoryCore};
 use xitdb::cursor::{ContextPart, PathPart, Writeable};
 use xitdb::database::{Database, InitOpts};
@@ -53,7 +53,7 @@ const fn int(n: i64) -> Writeable {
 fn frozen_map_writes_split_old_and_new() {
     let db = open_mem(601).unwrap();
     // History first: appends need an array root.
-    let history = WriteArrayList::new_write(&db.root_cursor()).unwrap();
+    let history = ArrayList::new_write(&db.root_cursor()).unwrap();
     history.append(Writeable::None).unwrap();
     db.root_cursor()
         .write_path(&[
@@ -91,7 +91,7 @@ fn frozen_map_writes_split_old_and_new() {
         ])
         .unwrap();
     db.run_context(|w| {
-        let history = WriteArrayList::new_write(w)?;
+        let history = ArrayList::new_write(w)?;
         let mc = history.get(1)?.unwrap();
         let m = HashMap::new(mc)?;
         assert_eq!(m.get("v")?.unwrap().read_int()?, 3);
@@ -104,7 +104,7 @@ fn frozen_map_writes_split_old_and_new() {
 fn frozen_byte_writer_rejects_post_freeze_writes() {
     let db = open_mem(602).unwrap();
     db.run_context(|w| {
-        let history = WriteArrayList::new_write(w)?;
+        let history = ArrayList::new_write(w)?;
         history.append_context(Writeable::None, |cursor| {
             let mut w1 = cursor.writer(&mut [0u8; 16])?;
             w1.write_bytes(&[0u8; 16])?;
@@ -128,7 +128,7 @@ fn frozen_byte_writer_rejects_post_freeze_writes() {
     .unwrap();
     // Rollback retains frozen bytes: freeze, then fail, then read back.
     db.run_context(|w| {
-        let history = WriteArrayList::new_write(w)?;
+        let history = ArrayList::new_write(w)?;
         let mc = history.put_cursor(0)?;
         db.freeze()?;
         let m = WriteHashMap::new_write(&mc)?;
@@ -138,7 +138,7 @@ fn frozen_byte_writer_rejects_post_freeze_writes() {
     .err()
     .unwrap();
     db.run_context(|w| {
-        let history = WriteArrayList::new_write(w)?;
+        let history = ArrayList::new_write(w)?;
         assert_eq!(history.count()?, 1);
         Ok(())
     })
@@ -291,4 +291,19 @@ fn linked_sized_stress() {
         })
         .unwrap();
     }
+}
+
+#[test]
+fn same_transaction_reads_observe_writes() {
+    let db = open_mem(920).unwrap();
+    db.run_context(|w| {
+        let list = ArrayList::new_write(w)?;
+        list.append(Writeable::Uint(1))?;
+        list.append(Writeable::Uint(2))?;
+        // same-transaction read through the same wrapper, incl. frozen copy
+        assert_eq!(list.get(0)?.ok_or(Error::KeyNotFound)?.read_uint()?, 1);
+        assert_eq!(list.get(1)?.ok_or(Error::KeyNotFound)?.read_uint()?, 2);
+        Ok(())
+    })
+    .unwrap();
 }

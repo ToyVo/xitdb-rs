@@ -48,7 +48,7 @@ In this example, we create a new database, write some data in a transaction, and
 
 ```rust
 use std::fs::OpenOptions;
-use xitdb::arraylist::{ReadArrayList, WriteArrayList};
+use xitdb::arraylist::ArrayList;
 use xitdb::core::BufferedFileCore;
 use xitdb::cursor::Writeable;
 use xitdb::database::{Database, InitOpts};
@@ -94,7 +94,7 @@ let db = Database::open(
 //    {"name": "Bob", "age": 42}
 //  ]}
 db.run_context(|w| {
-    let history = WriteArrayList::new_write(w)?;
+    let history = ArrayList::new_write(w)?;
     history.append_context(Writeable::None, |mc| {
         let moment = WriteHashMap::new_write(mc)?;
 
@@ -102,13 +102,13 @@ db.run_context(|w| {
         moment.put("bar", Writeable::Bytes(b"bar".to_vec()))?;
 
         let fruits_cursor = moment.put_cursor("fruits")?;
-        let fruits = WriteArrayList::new_write(&fruits_cursor)?;
+        let fruits = ArrayList::new_write(&fruits_cursor)?;
         fruits.append(Writeable::Bytes(b"apple".to_vec()))?;
         fruits.append(Writeable::Bytes(b"pear".to_vec()))?;
         fruits.append(Writeable::Bytes(b"grape".to_vec()))?;
 
         let people_cursor = moment.put_cursor("people")?;
-        let people = WriteArrayList::new_write(&people_cursor)?;
+        let people = ArrayList::new_write(&people_cursor)?;
 
         let alice_cursor = people.append_cursor()?;
         let alice = WriteHashMap::new_write(&alice_cursor)?;
@@ -126,7 +126,7 @@ db.run_context(|w| {
 // get the most recent copy of the database, like a moment
 // in time. the -1 index returns the last item in the list.
 let root = db.root_cursor();
-let history = WriteArrayList::new_write(&root)?;
+let history = ArrayList::new_write(&root)?;
 let moment = ReadHashMap::new(history.get(-1)?.ok_or(Error::KeyNotFound)?)?;
 
 // we can read the value of "foo" from the map by getting
@@ -136,7 +136,7 @@ assert_eq!(foo.read_bytes_alloc()?, b"foo");
 
 // to get the "fruits" list, we get the cursor to it and
 // then wrap it as an ArrayList
-let fruits = ReadArrayList::new(moment.get("fruits")?.ok_or(Error::KeyNotFound)?)?;
+let fruits = ArrayList::new(moment.get("fruits")?.ok_or(Error::KeyNotFound)?)?;
 
 // now we can get the first item from the fruits list and read it
 let apple = fruits.get(0)?.ok_or(Error::KeyNotFound)?;
@@ -217,9 +217,9 @@ history.append_context(Writeable::Slot(prev), |mc| {
     // create a new key called "food" whose initial value is
     // based on the "fruits" list
     let food_cursor = moment.put_cursor("food")?;
-    food_cursor.write(Writeable::Slot(ReadArrayList::new(fruits)?.slot()?))?;
+    food_cursor.write(Writeable::Slot(ArrayList::new(fruits)?.slot()?))?;
 
-    let food = WriteArrayList::new_write(&food_cursor)?;
+    let food = ArrayList::new_write(&food_cursor)?;
     food.append(Writeable::Bytes(b"eggs".to_vec()))?;
     food.append(Writeable::Bytes(b"rice".to_vec()))?;
     food.append(Writeable::Bytes(b"fish".to_vec()))?;
@@ -257,7 +257,7 @@ cities_cursor.write(Writeable::Slot(big.slot()?))?;
 // note: you can also freeze globally with `db.freeze()`.
 cities_cursor.freeze()?;
 
-let cities = WriteArrayList::new_write(&cities_cursor)?;
+let cities = ArrayList::new_write(&cities_cursor)?;
 cities.append(Writeable::Bytes(b"Charleston, SC".to_vec()))?;
 cities.append(Writeable::Bytes(b"Louisville, KY".to_vec()))?;
 ```
@@ -403,7 +403,7 @@ let bytes = reader.read_all()?;
 All data structures support iteration. Here's an example of iterating over an `ArrayList` and printing all of the keys and values of each `HashMap` contained in it:
 
 ```rust
-let people = ReadArrayList::new(moment.get("people")?.ok_or(Error::KeyNotFound)?)?;
+let people = ArrayList::new(moment.get("people")?.ok_or(Error::KeyNotFound)?)?;
 let mut people_walker = people.try_iter()?;
 while let Some(person) = people_walker.next() {
     let fields = ReadHashMap::new(person?)?;
@@ -491,7 +491,7 @@ let compacted = db.compact(
 
 // the compacted db holds one moment instead of three
 let cursor = compacted.root_cursor();
-let history = WriteArrayList::new_write(&cursor)?;
+let history = ArrayList::new_write(&cursor)?;
 assert_eq!(history.count()?, 1);
 ```
 
