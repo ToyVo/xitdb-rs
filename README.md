@@ -54,7 +54,7 @@ use xitdb::cursor::Writeable;
 use xitdb::database::{Database, InitOpts};
 use xitdb::error::Error;
 use xitdb::hasher::Sha1Hasher;
-use xitdb::hashmap::{ReadHashMap, WriteHashMap};
+use xitdb::hashmap::HashMap;
 
 // create db file
 let file = OpenOptions::new()

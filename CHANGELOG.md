@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Collections are single mode-generic structs (`ArrayList<'db, C, H, Mode>`,
+  etc.): the `Write*` wrappers, `Deref` impls, and `Read*` aliases are
+  removed — **breaking change**, will ship as 0.2.0. `WriteX::new_write`
+  becomes `X::new_write`, `ReadX::new` becomes `X::new`; write methods live
+  in `impl ReadWrite` blocks. Same paths, same file bytes.
 - README rewritten to mirror the Zig original's structure and narrative,
   with Rust snippets for every section, each executed by `tests/readme.rs`
 - Criterion benchmarks (`cargo bench`) for puts, gets, iteration,
