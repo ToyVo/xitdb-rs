@@ -1,0 +1,33 @@
+[package]
+name = "xitdb"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+description = "Immutable database (Rust port of xit-vcs/xitdb)"
+license = "MIT"
+repository = "https://github.com/ToyVo/xitdb-rs"
+documentation = "https://docs.rs/xitdb"
+keywords = ["database", "embedded", "immutable", "persistent"]
+categories = ["database-implementations"]
+exclude = [".github/**", "docs/**", "scripts/**"]
+
+[lints.clippy]
+pedantic = { level = "deny", priority = -1 }
+nursery = { level = "deny", priority = -1 }
+unwrap_used = "deny"
+expect_used = "deny"
+indexing_slicing = "deny"
+arithmetic_side_effects = "deny"
+unreachable = "deny"
+unimplemented = "deny"
+unchecked_time_subtraction = "deny"
+todo = "deny"
+string_slice = "deny"
+panic_in_result_fn = "deny"
+panic = "deny"
+exit = "deny"
+as_conversions = "deny"
+
+[dev-dependencies]
+axum = "0.8"
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }

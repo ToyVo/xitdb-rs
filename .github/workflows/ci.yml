@@ -1,0 +1,42 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - run: cargo test --all-targets
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo fmt --check
+
+  msrv:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.85
+      # `rust-version` is a published guarantee: lib and tests build
+      # and pass on the minimum toolchain (clippy/fmt stay on stable).
+      - run: cargo test --all-targets
+
+  compat:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+      # Regenerates go-golden.db from pinned xitdb-go, rewrites
+      # rust-golden.db, and reverse-verifies the Rust file with Go.
+      # Fails if either direction drifts. (Regenerated files differ in
+      # random commit ids by design, so this gates on the checks passing,
+      # not on byte identity.)
+      - run: bash scripts/gen-fixtures.sh
+      - run: cargo test --test compat
