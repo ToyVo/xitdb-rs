@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+- README rewritten to mirror the Zig original's structure and narrative,
+  with Rust snippets for every section, each executed by `tests/readme.rs`
+- Criterion benchmarks (`cargo bench`) for puts, gets, iteration,
+  pagination, commits, and file-backed writes (dev-dependency only)
+
 ## [0.1.0] - 2026-11-05
 
 Initial release: Rust port of [xit-vcs/xitdb](https://github.com/xit-vcs/xitdb),
