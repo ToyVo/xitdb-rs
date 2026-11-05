@@ -22,10 +22,10 @@ use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::routing::put;
 use xitdb::core::FileCore;
-use xitdb::cursor::Writeable;
+use xitdb::cursor::{ReadWrite, Writeable};
 use xitdb::database::{Database, InitOpts};
 use xitdb::hasher::Sha1Hasher;
-use xitdb::hashmap::{HashMap, WriteHashMap};
+use xitdb::hashmap::HashMap;
 
 type Db = Database<FileCore, Sha1Hasher>;
 type AppState = Arc<Mutex<Db>>;
@@ -33,14 +33,14 @@ type AppState = Arc<Mutex<Db>>;
 fn with_map(
     db: &AppState,
     f: impl FnOnce(
-        &WriteHashMap<'_, FileCore, Sha1Hasher>,
+        &HashMap<'_, FileCore, Sha1Hasher, ReadWrite>,
     ) -> xitdb::error::Result<axum::response::Response>,
 ) -> axum::response::Response {
     let guard = match db.lock() {
         Ok(guard) => guard,
         Err(poisoned) => poisoned.into_inner(),
     };
-    let map = match WriteHashMap::new_write(&guard.root_cursor()) {
+    let map = match HashMap::new_write(&guard.root_cursor()) {
         Ok(map) => map,
         Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
     };

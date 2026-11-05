@@ -14,7 +14,7 @@ use xitdb::counted_hashset::CountedHashSet;
 use xitdb::cursor::{Cursor, Writeable};
 use xitdb::database::{Database, InitOpts};
 use xitdb::hasher::Sha1Hasher;
-use xitdb::hashmap::{HashMap, WriteHashMap};
+use xitdb::hashmap::HashMap;
 use xitdb::hashset::HashSet;
 use xitdb::linked_arraylist::LinkedArrayList;
 use xitdb::tag::Tag;
@@ -275,7 +275,7 @@ fn reads_go_golden_fixture() {
     db.run_context(|w| {
         let history = ArrayList::new_write(w)?;
         let mc = history.put_cursor(0)?;
-        let m = WriteHashMap::new_write(&mc)?;
+        let m = HashMap::new_write(&mc)?;
         m.put("probe", Writeable::Uint(1))?;
         Ok(())
     })

@@ -1,11 +1,10 @@
 use std::cell::Cell;
 use std::marker::PhantomData;
-use std::ops::Deref;
 
 use crate::core::Core;
 use crate::cursor::{
-    ContextPart, Cursor, GetTarget, Iter, KeyValuePair, PathPart, ReadCursor, WriteCursor,
-    Writeable,
+    ContextPart, Cursor, GetTarget, Iter, KeyValuePair, PathPart, ReadCursor, ReadWrite,
+    WriteCursor, Writeable,
 };
 use crate::error::{Error, Result};
 use crate::hasher::Hasher;
@@ -130,19 +129,7 @@ impl<'db, C: Core, H: Hasher, Mode> CountedHashMap<'db, C, H, Mode> {
     }
 }
 
-pub struct WriteCountedHashMap<'db, C: Core, H: Hasher> {
-    read: CountedHashMap<'db, C, H, crate::cursor::ReadWrite>,
-    write_cursor: WriteCursor<'db, C, H>,
-}
-
-impl<'db, C: Core, H: Hasher> Deref for WriteCountedHashMap<'db, C, H> {
-    type Target = CountedHashMap<'db, C, H, crate::cursor::ReadWrite>;
-    fn deref(&self) -> &Self::Target {
-        &self.read
-    }
-}
-
-impl<'db, C: Core, H: Hasher> WriteCountedHashMap<'db, C, H> {
+impl<'db, C: Core, H: Hasher> CountedHashMap<'db, C, H, ReadWrite> {
     /// # Errors
     ///
     /// Propagates cursor and I/O failures.
@@ -151,38 +138,27 @@ impl<'db, C: Core, H: Hasher> WriteCountedHashMap<'db, C, H> {
             counted: true,
             set: false,
         }])?;
-        let read = CountedHashMap::new(wc.clone())?;
-        Ok(WriteCountedHashMap {
-            read,
-            write_cursor: wc,
-        })
+        CountedHashMap::new(wc)
     }
 
-    /// Runs a write path, then refreshes both halves from their stable
-    /// file position. Mirrors Go, where the read/write halves share one
-    /// `SlotPointer` refreshed by `reloadSlot` on every write: file positions
-    /// never move, so a re-read observes earlier writes in the same
-    /// transaction (including frozen copies).
+    /// Runs a write path, then refreshes this cursor from its stable
+    /// file position so later operations start from the collection
+    /// (file positions never move within a transaction).
     /// # Errors
     ///
     /// Propagates cursor and I/O failures.
     fn op(&self, parts: &[PathPart<'_, C, H>]) -> Result<WriteCursor<'db, C, H>> {
-        let c = self.write_cursor.write_path(parts)?;
-        if let Some(pos) = self.write_cursor.slot_ptr.get().position {
-            let slot = self.write_cursor.db.read_slot_at(pos)?;
+        let c = self.cursor.write_path(parts)?;
+        if let Some(pos) = self.cursor.slot_ptr.get().position {
+            let slot = self.cursor.db.read_slot_at(pos)?;
             slot.validate()?;
             let sp = crate::cursor::SlotPointer {
                 position: Some(pos),
                 slot,
             };
-            self.write_cursor.slot_ptr.set(sp);
-            self.read.cursor.slot_ptr.set(sp);
+            self.cursor.slot_ptr.set(sp);
         }
         Ok(c)
-    }
-
-    fn digest(&self, key: &[u8]) -> Vec<u8> {
-        self.read.digest(key)
     }
 
     /// # Errors
@@ -197,7 +173,7 @@ impl<'db, C: Core, H: Hasher> WriteCountedHashMap<'db, C, H> {
     ///
     /// Propagates cursor and I/O failures.
     pub fn put_by_hash(&self, hash: &[u8], data: Writeable) -> Result<()> {
-        self.write_cursor
+        self.cursor
             .write_path(&[
                 PathPart::HashMapGet {
                     target: GetTarget::Value(hash.to_vec()),
@@ -212,7 +188,7 @@ impl<'db, C: Core, H: Hasher> WriteCountedHashMap<'db, C, H> {
     /// Propagates cursor and I/O failures.
     fn put_key_value(&self, hash: &[u8], key: Vec<u8>, data: Writeable) -> Result<()> {
         let target = GetTarget::KeyValue(hash.to_vec());
-        self.write_cursor
+        self.cursor
             .write_path(&[
                 PathPart::HashMapGet { target },
                 PathPart::Context(ContextPart::new(move |c| {
@@ -248,7 +224,7 @@ impl<'db, C: Core, H: Hasher> WriteCountedHashMap<'db, C, H> {
     /// Propagates cursor and I/O failures.
     pub fn put_key_by_hash(&self, hash: &[u8], data: Writeable) -> Result<()> {
         let target = GetTarget::Key(hash.to_vec());
-        self.write_cursor
+        self.cursor
             .write_path(&[
                 PathPart::HashMapGet { target },
                 PathPart::Context(ContextPart::new(move |c| c.write_if_empty(data))),
@@ -277,5 +253,3 @@ impl<'db, C: Core, H: Hasher> WriteCountedHashMap<'db, C, H> {
         }
     }
 }
-
-pub type ReadCountedHashMap<'db, C, H> = CountedHashMap<'db, C, H, crate::cursor::ReadOnly>;

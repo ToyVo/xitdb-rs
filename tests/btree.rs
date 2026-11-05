@@ -61,10 +61,10 @@ fn linked_insert_at_zero_preserves_order() {
 
 #[test]
 fn linked_slice_and_concat_round_trip() {
-    use xitdb::hashmap::WriteHashMap;
+    use xitdb::hashmap::HashMap;
     let db = open_mem(202).unwrap();
     db.run_context(|w| {
-        let m = WriteHashMap::new_write(w)?;
+        let m = HashMap::new_write(w)?;
         let ac = m.put_cursor("a")?;
         let a = WriteLinkedArrayList::new_write(&ac)?;
         for i in 0..10u64 {
@@ -85,7 +85,7 @@ fn linked_slice_and_concat_round_trip() {
     })
     .unwrap();
     db.run_context(|w| {
-        let m = WriteHashMap::new_write(w)?;
+        let m = HashMap::new_write(w)?;
         let a = LinkedArrayList::new(m.get("a")?.unwrap())?;
         assert_eq!(a.count()?, 7);
         assert_eq!(a.get(0)?.unwrap().read_uint()?, 2);

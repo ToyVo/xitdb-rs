@@ -1,10 +1,9 @@
 use std::cell::Cell;
 use std::marker::PhantomData;
-use std::ops::Deref;
 
 use crate::core::Core;
 use crate::cursor::{
-    ContextPart, Cursor, GetTarget, Iter, PathPart, ReadCursor, WriteCursor, Writeable,
+    ContextPart, Cursor, GetTarget, Iter, PathPart, ReadCursor, ReadWrite, WriteCursor, Writeable,
 };
 use crate::error::{Error, Result};
 use crate::hasher::Hasher;
@@ -103,19 +102,7 @@ impl<'db, C: Core, H: Hasher, Mode> HashSet<'db, C, H, Mode> {
     }
 }
 
-pub struct WriteHashSet<'db, C: Core, H: Hasher> {
-    read: HashSet<'db, C, H, crate::cursor::ReadWrite>,
-    write_cursor: WriteCursor<'db, C, H>,
-}
-
-impl<'db, C: Core, H: Hasher> Deref for WriteHashSet<'db, C, H> {
-    type Target = HashSet<'db, C, H, crate::cursor::ReadWrite>;
-    fn deref(&self) -> &Self::Target {
-        &self.read
-    }
-}
-
-impl<'db, C: Core, H: Hasher> WriteHashSet<'db, C, H> {
+impl<'db, C: Core, H: Hasher> HashSet<'db, C, H, ReadWrite> {
     /// # Errors
     ///
     /// Propagates cursor and I/O failures.
@@ -124,38 +111,27 @@ impl<'db, C: Core, H: Hasher> WriteHashSet<'db, C, H> {
             counted: false,
             set: true,
         }])?;
-        let read = HashSet::new(wc.clone())?;
-        Ok(WriteHashSet {
-            read,
-            write_cursor: wc,
-        })
+        HashSet::new(wc)
     }
 
-    /// Runs a write path, then refreshes both halves from their stable
-    /// file position. Mirrors Go, where the read/write halves share one
-    /// `SlotPointer` refreshed by `reloadSlot` on every write: file positions
-    /// never move, so a re-read observes earlier writes in the same
-    /// transaction (including frozen copies).
+    /// Runs a write path, then refreshes this cursor from its stable
+    /// file position so later operations start from the collection
+    /// (file positions never move within a transaction).
     /// # Errors
     ///
     /// Propagates cursor and I/O failures.
     fn op(&self, parts: &[PathPart<'_, C, H>]) -> Result<WriteCursor<'db, C, H>> {
-        let c = self.write_cursor.write_path(parts)?;
-        if let Some(pos) = self.write_cursor.slot_ptr.get().position {
-            let slot = self.write_cursor.db.read_slot_at(pos)?;
+        let c = self.cursor.write_path(parts)?;
+        if let Some(pos) = self.cursor.slot_ptr.get().position {
+            let slot = self.cursor.db.read_slot_at(pos)?;
             slot.validate()?;
             let sp = crate::cursor::SlotPointer {
                 position: Some(pos),
                 slot,
             };
-            self.write_cursor.slot_ptr.set(sp);
-            self.read.cursor.slot_ptr.set(sp);
+            self.cursor.slot_ptr.set(sp);
         }
         Ok(c)
-    }
-
-    fn digest(&self, key: &[u8]) -> Vec<u8> {
-        self.read.digest(key)
     }
 
     /// Sets only the key; the value always stays empty.
@@ -180,7 +156,7 @@ impl<'db, C: Core, H: Hasher> WriteHashSet<'db, C, H> {
     /// Propagates cursor and I/O failures.
     pub fn put_by_hash(&self, hash: &[u8], key: Writeable) -> Result<()> {
         let target = GetTarget::Key(hash.to_vec());
-        self.write_cursor
+        self.cursor
             .write_path(&[
                 PathPart::HashMapGet { target },
                 PathPart::Context(ContextPart::new(move |c| c.write_if_empty(key))),
@@ -227,5 +203,3 @@ impl<'db, C: Core, H: Hasher> WriteHashSet<'db, C, H> {
         }
     }
 }
-
-pub type ReadHashSet<'db, C, H> = HashSet<'db, C, H, crate::cursor::ReadOnly>;

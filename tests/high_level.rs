@@ -12,7 +12,7 @@ use xitdb::cursor::Writeable;
 use xitdb::database::{Database, InitOpts, ROOT_HEADER_END, ROOT_HEADER_START};
 use xitdb::error::Error;
 use xitdb::hasher::{Hasher, Sha1Hasher};
-use xitdb::hashmap::{HashMap, WriteHashMap};
+use xitdb::hashmap::HashMap;
 use xitdb::linked_arraylist::{LinkedArrayList, WriteLinkedArrayList};
 use xitdb::sorted_map::{SortedMap, WriteSortedMap};
 
@@ -115,7 +115,7 @@ fn file_backends_agree_with_memory() {
     fdb.run_context(|w| {
         let h = ArrayList::new_write(w)?;
         h.append_context(Writeable::None, |mc| {
-            let m = WriteHashMap::new_write(mc)?;
+            let m = HashMap::new_write(mc)?;
             m.put("k", uint(7))?;
             Ok(())
         })
@@ -141,7 +141,7 @@ fn file_backends_agree_with_memory() {
     bdb.run_context(|w| {
         let h = ArrayList::new_write(w)?;
         h.append_context(Writeable::None, |mc| {
-            let m = WriteHashMap::new_write(mc)?;
+            let m = HashMap::new_write(mc)?;
             m.put("k", uint(7))?;
             Ok(())
         })
@@ -164,11 +164,11 @@ fn file_backends_agree_with_memory() {
 fn hash_map_root_with_append_only_replication() {
     let source = open_mem(504).unwrap();
     let replica = open_mem(505).unwrap();
-    let m = WriteHashMap::new_write(&source.root_cursor()).unwrap();
+    let m = HashMap::new_write(&source.root_cursor()).unwrap();
 
     // Initializing an initialized root starts no transaction.
     let size_after_init = source.committed_size().unwrap();
-    let _ = WriteHashMap::new_write(&source.root_cursor()).unwrap();
+    let _ = HashMap::new_write(&source.root_cursor()).unwrap();
     assert_eq!(size_after_init, source.committed_size().unwrap());
 
     // Nor can the root be initialized as another type.
@@ -213,14 +213,14 @@ fn sorted_user_directory_paginate_and_autocomplete() {
         ("user000000000006", "eve", "Eve Adams"),
     ];
     db.run_context(|w| {
-        let moment = WriteHashMap::new_write(w)?;
+        let moment = HashMap::new_write(w)?;
         let idc = moment.put_cursor("id->user")?;
-        let id_to_user = WriteHashMap::new_write(&idc)?;
+        let id_to_user = HashMap::new_write(&idc)?;
         let uc = moment.put_cursor("username->id")?;
         let username_to_id = WriteSortedMap::new_write(&uc)?;
         for (id, username, name) in users {
             let user_cursor = id_to_user.put_cursor(id)?;
-            let user = WriteHashMap::new_write(&user_cursor)?;
+            let user = HashMap::new_write(&user_cursor)?;
             user.put("username", Writeable::Bytes(username.as_bytes().to_vec()))?;
             user.put("name", Writeable::Bytes(name.as_bytes().to_vec()))?;
             username_to_id.put(username, Writeable::Bytes(id.as_bytes().to_vec()))?;
@@ -230,7 +230,7 @@ fn sorted_user_directory_paginate_and_autocomplete() {
     .unwrap();
 
     db.run_context(|w| {
-        let moment = WriteHashMap::new_write(w)?;
+        let moment = HashMap::new_write(w)?;
         let id_to_user = HashMap::new(moment.get("id->user")?.unwrap())?;
         let username_to_id = SortedMap::new(moment.get("username->id")?.unwrap())?;
         // Page [2,4): carol, dan.
@@ -273,7 +273,7 @@ fn multithreaded_reads_alongside_writes() {
         db.run_context(|w| {
             let h = ArrayList::new_write(w)?;
             h.append_context(Writeable::None, |mc| {
-                let m = WriteHashMap::new_write(mc)?;
+                let m = HashMap::new_write(mc)?;
                 m.put("foo", Writeable::Bytes(b"foo".to_vec()))?;
                 Ok(())
             })
@@ -313,7 +313,7 @@ fn all_from_seeks_past_256_element_tiers() {
     db.run_context(|w| {
         let h = ArrayList::new_write(w)?;
         h.append_context(Writeable::None, |mc| {
-            let m = WriteHashMap::new_write(mc)?;
+            let m = HashMap::new_write(mc)?;
             let lc = m.put_cursor("list")?;
             let list = ArrayList::new_write(&lc)?;
             for i in 0..200u64 {

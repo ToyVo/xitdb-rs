@@ -8,7 +8,7 @@ use xitdb::cursor::{ReadOnly, WriteCursor, Writeable};
 use xitdb::database::{Database, InitOpts};
 use xitdb::error::Error;
 use xitdb::hasher::{Hasher, Sha1Hasher, bytes_to_id, id_to_bytes};
-use xitdb::hashmap::{ReadHashMap, WriteHashMap};
+use xitdb::hashmap::HashMap;
 use xitdb::header::{HEADER_LEN, Header};
 use xitdb::offset_map::{FileOffsetMap, MemoryOffsetMap};
 use xitdb::sorted_map::{ReadSortedMap, WriteSortedMap};
@@ -56,7 +56,7 @@ fn open_file(
 fn seed_example(w: &WriteCursor<'_, impl Core, impl Hasher>) -> Result<(), Error> {
     let history = ArrayList::new_write(w)?;
     history.append_context(Writeable::None, |mc| {
-        let moment = WriteHashMap::new_write(mc)?;
+        let moment = HashMap::new_write(mc)?;
         moment.put("foo", Writeable::Bytes(b"foo".to_vec()))?;
         moment.put("bar", Writeable::Bytes(b"bar".to_vec()))?;
         let fruits_cursor = moment.put_cursor("fruits")?;
@@ -67,11 +67,11 @@ fn seed_example(w: &WriteCursor<'_, impl Core, impl Hasher>) -> Result<(), Error
         let people_cursor = moment.put_cursor("people")?;
         let people = ArrayList::new_write(&people_cursor)?;
         let alice_cursor = people.append_cursor()?;
-        let alice = WriteHashMap::new_write(&alice_cursor)?;
+        let alice = HashMap::new_write(&alice_cursor)?;
         alice.put("name", Writeable::Bytes(b"Alice".to_vec()))?;
         alice.put("age", Writeable::Uint(25))?;
         let bob_cursor = people.append_cursor()?;
-        let bob = WriteHashMap::new_write(&bob_cursor)?;
+        let bob = HashMap::new_write(&bob_cursor)?;
         bob.put("name", Writeable::Bytes(b"Bob".to_vec()))?;
         bob.put("age", Writeable::Uint(42))?;
         Ok(())
@@ -80,15 +80,15 @@ fn seed_example(w: &WriteCursor<'_, impl Core, impl Hasher>) -> Result<(), Error
 
 fn latest_moment(
     db: &Database<MemoryCore, Sha1Hasher>,
-) -> Result<ReadHashMap<'_, MemoryCore, Sha1Hasher>, Error> {
+) -> Result<HashMap<'_, MemoryCore, Sha1Hasher, ReadOnly>, Error> {
     let cursor = db.root_cursor();
     let history = ArrayList::new_write(&cursor)?;
     let moment = history.get(-1)?.ok_or(Error::KeyNotFound)?;
-    ReadHashMap::new(moment)
+    HashMap::new(moment)
 }
 
 fn people_in<'a>(
-    moment: &ReadHashMap<'a, MemoryCore, Sha1Hasher>,
+    moment: &HashMap<'a, MemoryCore, Sha1Hasher, ReadOnly>,
 ) -> Result<ArrayList<'a, MemoryCore, Sha1Hasher, ReadOnly>, Error> {
     let cursor = moment.get("people")?.ok_or(Error::KeyNotFound)?;
     ArrayList::new(cursor)
@@ -109,7 +109,7 @@ fn example() {
 
     let cursor = db.root_cursor();
     let history = ArrayList::new_write(&cursor).unwrap();
-    let moment = ReadHashMap::new(history.get(-1).unwrap().unwrap()).unwrap();
+    let moment = HashMap::new(history.get(-1).unwrap().unwrap()).unwrap();
     let foo = moment.get("foo").unwrap().unwrap();
     assert_eq!(foo.read_bytes_alloc().unwrap(), b"foo");
 
@@ -135,7 +135,7 @@ fn initializing_memory() {
 fn type_format_tag() {
     let db = open_mem(902).unwrap();
     db.run_context(|w| {
-        let moment = WriteHashMap::new_write(w)?;
+        let moment = HashMap::new_write(w)?;
         moment.put(
             "random-number",
             Writeable::BytesObject {
@@ -148,7 +148,7 @@ fn type_format_tag() {
     .unwrap();
 
     let cursor = db.root_cursor();
-    let moment = WriteHashMap::new_write(&cursor).unwrap();
+    let moment = HashMap::new_write(&cursor).unwrap();
     let cursor = moment.get("random-number").unwrap().unwrap();
     let mut scratch = [0u8; 64];
     let number = cursor.read_bytes_object(&mut scratch).unwrap();
@@ -164,7 +164,7 @@ fn clone_food() {
         let history = ArrayList::new_write(w)?;
         let prev = history.get_slot(-1)?;
         history.append_context(Writeable::Slot(prev), |mc| {
-            let moment = WriteHashMap::new_write(mc)?;
+            let moment = HashMap::new_write(mc)?;
             let fruits = moment.get("fruits")?.ok_or(Error::KeyNotFound)?;
             let fruits_list = ArrayList::new(fruits)?;
             let food_cursor = moment.put_cursor("food")?;
@@ -193,7 +193,7 @@ fn clone_same_transaction_sees_writes() {
         let history = ArrayList::new_write(w)?;
         let prev = history.get_slot(-1)?;
         history.append_context(Writeable::Slot(prev), |mc| {
-            let moment = WriteHashMap::new_write(mc)?;
+            let moment = HashMap::new_write(mc)?;
             let big_cursor = moment.put_cursor("big-cities")?;
             let big = ArrayList::new_write(&big_cursor)?;
             big.append(Writeable::Bytes(b"New York, NY".to_vec()))?;
@@ -230,7 +230,7 @@ fn undo_and_freeze() {
         let history = ArrayList::new_write(w)?;
         let prev = history.get_slot(-1)?;
         history.append_context(Writeable::Slot(prev), |mc| {
-            let moment = WriteHashMap::new_write(mc)?;
+            let moment = HashMap::new_write(mc)?;
             let big_cursor = moment.put_cursor("big-cities")?;
             let big = ArrayList::new_write(&big_cursor)?;
             big.append(Writeable::Bytes(b"New York, NY".to_vec()))?;
@@ -254,7 +254,7 @@ fn undo_and_freeze() {
         let history = ArrayList::new_write(w)?;
         let prev = history.get_slot(-1)?;
         history.append_context(Writeable::Slot(prev), |mc| {
-            let moment = WriteHashMap::new_write(mc)?;
+            let moment = HashMap::new_write(mc)?;
             let big_cursor = moment.put_cursor("big-cities")?;
             let big = ArrayList::new_write(&big_cursor)?;
             big.append(Writeable::Bytes(b"New York, NY".to_vec()))?;
@@ -287,14 +287,14 @@ fn seed_users(db: &Database<MemoryCore, Sha1Hasher>) -> Result<(), Error> {
         ("user000000000006", "eve", "Eve Adams"),
     ];
     db.run_context(|w| {
-        let moment = WriteHashMap::new_write(w)?;
+        let moment = HashMap::new_write(w)?;
         let idc = moment.put_cursor("id->user")?;
-        let id_to_user = WriteHashMap::new_write(&idc)?;
+        let id_to_user = HashMap::new_write(&idc)?;
         let uc = moment.put_cursor("username->id")?;
         let username_to_id = WriteSortedMap::new_write(&uc)?;
         for (id, username, name) in users {
             let user_cursor = id_to_user.put_cursor(id)?;
-            let user = WriteHashMap::new_write(&user_cursor)?;
+            let user = HashMap::new_write(&user_cursor)?;
             user.put("username", Writeable::Bytes(username.as_bytes().to_vec()))?;
             user.put("name", Writeable::Bytes(name.as_bytes().to_vec()))?;
             username_to_id.put(username, Writeable::Bytes(id.as_bytes().to_vec()))?;
@@ -320,7 +320,7 @@ fn sorted_pagination() {
     seed_users(&db).unwrap();
 
     let cursor = db.root_cursor();
-    let moment = WriteHashMap::new_write(&cursor).unwrap();
+    let moment = HashMap::new_write(&cursor).unwrap();
     let username_to_id = ReadSortedMap::new(moment.get("username->id").unwrap().unwrap()).unwrap();
     assert_eq!(username_to_id.count().unwrap(), 6);
 
@@ -350,7 +350,7 @@ fn sorted_type_ahead() {
     seed_users(&db).unwrap();
 
     let cursor = db.root_cursor();
-    let moment = WriteHashMap::new_write(&cursor).unwrap();
+    let moment = HashMap::new_write(&cursor).unwrap();
     let username_to_id = ReadSortedMap::new(moment.get("username->id").unwrap().unwrap()).unwrap();
 
     let walker = username_to_id.iter_from(b"da").unwrap();
@@ -372,7 +372,7 @@ fn sorted_type_ahead() {
 fn large_byte_arrays() {
     let db = open_mem(908).unwrap();
     db.run_context(|w| {
-        let moment = WriteHashMap::new_write(w)?;
+        let moment = HashMap::new_write(w)?;
         let text_cursor = moment.put_cursor("long-text")?;
         let mut buf = [0u8; 1024];
         let mut writer = text_cursor.writer(&mut buf)?;
@@ -386,7 +386,7 @@ fn large_byte_arrays() {
     .unwrap();
 
     let cursor = db.root_cursor();
-    let moment = WriteHashMap::new_write(&cursor).unwrap();
+    let moment = HashMap::new_write(&cursor).unwrap();
     let cursor = moment.get("long-text").unwrap().unwrap();
     // An empty buffer means "no cap": read the whole value and its tag.
     let tagged = cursor.read_bytes_object(&mut []).unwrap();
@@ -414,7 +414,7 @@ fn iterators() {
     let mut walked = Vec::new();
     let people_walker = people.try_iter().unwrap();
     for person in people_walker {
-        let fields = ReadHashMap::new(person.unwrap()).unwrap();
+        let fields = HashMap::new(person.unwrap()).unwrap();
         let fields_walker = fields.try_iter().unwrap();
         for kv_cursor in fields_walker {
             let kv = kv_cursor.unwrap().read_key_value_pair().unwrap();

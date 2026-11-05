@@ -9,7 +9,7 @@ use xitdb::core::{BufferedFileCore, MemoryCore};
 use xitdb::cursor::Writeable;
 use xitdb::database::{Database, InitOpts};
 use xitdb::hasher::Sha1Hasher;
-use xitdb::hashmap::WriteHashMap;
+use xitdb::hashmap::HashMap;
 use xitdb::sorted_map::WriteSortedMap;
 
 fn bench_db(file_id: u64) -> Option<Database<MemoryCore, Sha1Hasher>> {
@@ -33,7 +33,7 @@ fn hashmap_put(c: &mut Criterion) {
                 return;
             };
             let outcome = db.run_context(|w| {
-                let map = WriteHashMap::new_write(w)?;
+                let map = HashMap::new_write(w)?;
                 for i in 0..1000u64 {
                     map.put(&format!("key-{i}"), Writeable::Uint(i))?;
                 }
@@ -52,7 +52,7 @@ fn hashmap_get(c: &mut Criterion) {
         return;
     };
     let seeded = db.run_context(|w| {
-        let map = WriteHashMap::new_write(w)?;
+        let map = HashMap::new_write(w)?;
         for i in 0..10_000u64 {
             map.put(&format!("key-{i}"), Writeable::Uint(i))?;
         }
@@ -66,7 +66,7 @@ fn hashmap_get(c: &mut Criterion) {
     c.bench_function("hashmap_get_100", |b| {
         b.iter(|| {
             let cursor = db.root_cursor();
-            let map = match WriteHashMap::new_write(&cursor) {
+            let map = match HashMap::new_write(&cursor) {
                 Ok(map) => map,
                 Err(error) => {
                     eprintln!("bench open failed: {error}");
@@ -211,7 +211,7 @@ fn commit_moment(c: &mut Criterion) {
                 return;
             };
             let outcome = db.run_context(|w| {
-                let moment = WriteHashMap::new_write(w)?;
+                let moment = HashMap::new_write(w)?;
                 for i in 0..10u64 {
                     moment.put(&format!("key-{i}"), Writeable::Uint(i))?;
                 }
@@ -269,7 +269,7 @@ fn file_write_throughput(c: &mut Criterion) {
     c.bench_function("file_write_100", |b| {
         b.iter(|| {
             let outcome = db.run_context(|w| {
-                let map = WriteHashMap::new_write(w)?;
+                let map = HashMap::new_write(w)?;
                 for i in 0..100u64 {
                     map.put(&format!("key-{i}"), Writeable::Uint(i))?;
                 }

@@ -96,7 +96,7 @@ let db = Database::open(
 db.run_context(|w| {
     let history = ArrayList::new_write(w)?;
     history.append_context(Writeable::None, |mc| {
-        let moment = WriteHashMap::new_write(mc)?;
+        let moment = HashMap::new_write(mc)?;
 
         moment.put("foo", Writeable::Bytes(b"foo".to_vec()))?;
         moment.put("bar", Writeable::Bytes(b"bar".to_vec()))?;
@@ -111,12 +111,12 @@ db.run_context(|w| {
         let people = ArrayList::new_write(&people_cursor)?;
 
         let alice_cursor = people.append_cursor()?;
-        let alice = WriteHashMap::new_write(&alice_cursor)?;
+        let alice = HashMap::new_write(&alice_cursor)?;
         alice.put("name", Writeable::Bytes(b"Alice".to_vec()))?;
         alice.put("age", Writeable::Uint(25))?;
 
         let bob_cursor = people.append_cursor()?;
-        let bob = WriteHashMap::new_write(&bob_cursor)?;
+        let bob = HashMap::new_write(&bob_cursor)?;
         bob.put("name", Writeable::Bytes(b"Bob".to_vec()))?;
         bob.put("age", Writeable::Uint(42))?;
         Ok(())
@@ -127,7 +127,7 @@ db.run_context(|w| {
 // in time. the -1 index returns the last item in the list.
 let root = db.root_cursor();
 let history = ArrayList::new_write(&root)?;
-let moment = ReadHashMap::new(history.get(-1)?.ok_or(Error::KeyNotFound)?)?;
+let moment = HashMap::new(history.get(-1)?.ok_or(Error::KeyNotFound)?)?;
 
 // we can read the value of "foo" from the map by getting
 // the cursor to "foo" and then reading the bytes
@@ -211,7 +211,7 @@ A powerful feature of immutable data is fast cloning. Any data structure can be 
 ```rust
 let prev = history.get_slot(-1)?;
 history.append_context(Writeable::Slot(prev), |mc| {
-    let moment = WriteHashMap::new_write(mc)?;
+    let moment = HashMap::new_write(mc)?;
     let fruits = moment.get("fruits")?.ok_or(Error::KeyNotFound)?;
 
     // create a new key called "food" whose initial value is
@@ -288,11 +288,11 @@ let users = [
 ];
 
 db.run_context(|w| {
-    let moment = WriteHashMap::new_write(w)?;
+    let moment = HashMap::new_write(w)?;
 
     // the primary store: a HashMap from user id to the user's fields
     let idc = moment.put_cursor("id->user")?;
-    let id_to_user = WriteHashMap::new_write(&idc)?;
+    let id_to_user = HashMap::new_write(&idc)?;
 
     // the secondary index: a SortedMap ordered alphabetically by username.
     // there's no CREATE INDEX here, so we maintain it ourselves on every write.
@@ -302,7 +302,7 @@ db.run_context(|w| {
     for (id, username, name) in users {
         // write the user into the primary map under its id
         let user_cursor = id_to_user.put_cursor(id)?;
-        let user = WriteHashMap::new_write(&user_cursor)?;
+        let user = HashMap::new_write(&user_cursor)?;
         user.put("username", Writeable::Bytes(username.as_bytes().to_vec()))?;
         user.put("name", Writeable::Bytes(name.as_bytes().to_vec()))?;
 
@@ -406,7 +406,7 @@ All data structures support iteration. Here's an example of iterating over an `A
 let people = ArrayList::new(moment.get("people")?.ok_or(Error::KeyNotFound)?)?;
 let mut people_walker = people.try_iter()?;
 while let Some(person) = people_walker.next() {
-    let fields = ReadHashMap::new(person?)?;
+    let fields = HashMap::new(person?)?;
     let mut fields_walker = fields.try_iter()?;
     while let Some(kv_cursor) = fields_walker.next() {
         let kv = kv_cursor?.read_key_value_pair()?;

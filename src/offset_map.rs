@@ -1,10 +1,8 @@
-use std::collections::HashMap;
-
 use crate::core::Core;
-use crate::cursor::{WriteCursor, Writeable};
+use crate::cursor::{ReadWrite, WriteCursor, Writeable};
 use crate::error::Result;
 use crate::hasher::Hasher;
-use crate::hashmap::WriteHashMap;
+use crate::hashmap::HashMap;
 
 /// Maps source offsets to target offsets during compaction.
 ///
@@ -35,7 +33,7 @@ pub trait OffsetMap {
 /// In-memory offsets. Grows with the number of live objects copied, so
 /// huge databases should use [`FileOffsetMap`] instead.
 pub struct MemoryOffsetMap {
-    map: HashMap<u64, u64>,
+    map: std::collections::HashMap<u64, u64>,
 }
 
 impl MemoryOffsetMap {
@@ -43,7 +41,7 @@ impl MemoryOffsetMap {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            map: HashMap::new(),
+            map: std::collections::HashMap::new(),
         }
     }
 }
@@ -78,7 +76,7 @@ impl OffsetMap for MemoryOffsetMap {
 /// committed separately. The scratch database's hash size must be at
 /// least 8 bytes.
 pub struct FileOffsetMap<'db, C: Core, H: Hasher> {
-    map: WriteHashMap<'db, C, H>,
+    map: HashMap<'db, C, H, ReadWrite>,
 }
 
 impl<'db, C: Core, H: Hasher> FileOffsetMap<'db, C, H> {
@@ -89,7 +87,7 @@ impl<'db, C: Core, H: Hasher> FileOffsetMap<'db, C, H> {
     /// Propagates hash-map initialization failures.
     pub fn new(cursor: &WriteCursor<'db, C, H>) -> Result<Self> {
         Ok(FileOffsetMap {
-            map: WriteHashMap::new_write(cursor)?,
+            map: HashMap::new_write(cursor)?,
         })
     }
 
@@ -118,7 +116,7 @@ impl<C: Core, H: Hasher> OffsetMap for FileOffsetMap<'_, C, H> {
     fn reset(&mut self) -> Result<()> {
         let wc = self.map.write_cursor().clone();
         wc.write(Writeable::None)?;
-        self.map = WriteHashMap::new_write(&wc)?;
+        self.map = HashMap::new_write(&wc)?;
         Ok(())
     }
 

@@ -6,7 +6,7 @@ use xitdb::core::FileCore;
 use xitdb::cursor::Writeable;
 use xitdb::database::{Database, InitOpts};
 use xitdb::hasher::Sha1Hasher;
-use xitdb::hashmap::WriteHashMap;
+use xitdb::hashmap::HashMap;
 use xitdb::linked_arraylist::WriteLinkedArrayList;
 use xitdb::sorted_map::WriteSortedMap;
 
@@ -35,7 +35,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     db.run_context(|w| {
         let history = ArrayList::new_write(w)?;
         history.append_context(Writeable::None, |mc| {
-            let m = WriteHashMap::new_write(mc)?;
+            let m = HashMap::new_write(mc)?;
             m.put("name", Writeable::Bytes(b"rust".to_vec()))?;
             m.put("answer", Writeable::Uint(42))?;
             m.put(

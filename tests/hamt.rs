@@ -1,13 +1,13 @@
 use xitdb::arraylist::ArrayList;
 use xitdb::core::MemoryCore;
-use xitdb::counted_hashmap::WriteCountedHashMap;
-use xitdb::counted_hashset::WriteCountedHashSet;
+use xitdb::counted_hashmap::CountedHashMap;
+use xitdb::counted_hashset::CountedHashSet;
 use xitdb::cursor::{SlotPointer, Writeable};
 use xitdb::database::{Database, InitOpts};
 use xitdb::error::Error;
 use xitdb::hasher::{Hasher, Sha1Hasher};
-use xitdb::hashmap::{ReadHashMap, WriteHashMap};
-use xitdb::hashset::WriteHashSet;
+use xitdb::hashmap::HashMap;
+use xitdb::hashset::HashSet;
 use xitdb::slot::Slot;
 use xitdb::tag::Tag;
 
@@ -35,14 +35,14 @@ fn str_bytes(s: &str) -> Vec<u8> {
 fn map_put_get_remove_strings() {
     let db = open_mem(101).unwrap();
     db.run_context(|w| {
-        let m = WriteHashMap::new_write(w)?;
+        let m = HashMap::new_write(w)?;
         m.put("foo", uint(1))?;
         m.put("bar", uint(2))?;
         Ok(())
     })
     .unwrap();
     db.run_context(|w| {
-        let m = WriteHashMap::new_write(w)?;
+        let m = HashMap::new_write(w)?;
         let got = m.get("foo")?.map(|c| c.read_uint()).transpose()?.unwrap();
         assert_eq!(got, 1);
         assert!(m.get("missing")?.is_none());
@@ -53,7 +53,7 @@ fn map_put_get_remove_strings() {
     })
     .unwrap();
     db.run_context(|w| {
-        let m = WriteHashMap::new_write(w)?;
+        let m = HashMap::new_write(w)?;
         assert!(m.get("bar")?.is_none());
         assert_eq!(m.get("foo")?.unwrap().read_uint()?, 1);
         Ok(())
@@ -65,14 +65,14 @@ fn map_put_get_remove_strings() {
 fn map_bytes_and_hash_keys() {
     let db = open_mem(102).unwrap();
     db.run_context(|w| {
-        let m = WriteHashMap::new_write(w)?;
+        let m = HashMap::new_write(w)?;
         m.put_by_bytes(b"k\xffkey", uint(7))?;
         m.put("s", uint(8))?;
         Ok(())
     })
     .unwrap();
     db.run_context(|w| {
-        let m = WriteHashMap::new_write(w)?;
+        let m = HashMap::new_write(w)?;
         assert_eq!(m.get_by_bytes(b"k\xffkey")?.unwrap().read_uint()?, 7);
         let hash = Sha1Hasher.digest(b"s");
         assert_eq!(m.get_by_hash(&hash)?.unwrap().read_uint()?, 8);
@@ -87,13 +87,13 @@ fn map_bytes_and_hash_keys() {
 fn map_key_value_pair_access() {
     let db = open_mem(103).unwrap();
     db.run_context(|w| {
-        let m = WriteHashMap::new_write(w)?;
+        let m = HashMap::new_write(w)?;
         m.put("k", uint(9))?;
         Ok(())
     })
     .unwrap();
     db.run_context(|w| {
-        let m = WriteHashMap::new_write(w)?;
+        let m = HashMap::new_write(w)?;
         let kv = m.get_key_value_pair("k")?.unwrap();
         assert_eq!(kv.key.read_bytes_alloc()?, str_bytes("k"));
         assert_eq!(kv.value.read_uint()?, 9);
@@ -107,7 +107,7 @@ fn map_key_value_pair_access() {
 fn counted_map_and_set_track_counts() {
     let db = open_mem(104).unwrap();
     db.run_context(|w| {
-        let m = WriteCountedHashMap::new_write(w)?;
+        let m = CountedHashMap::new_write(w)?;
         m.put("a", uint(1))?;
         m.put("b", uint(2))?;
         m.put("a", uint(3))?;
@@ -127,7 +127,7 @@ fn counted_set_track_counts() {
     // count, so the set flow starts from an empty root.
     let db = open_mem(114).unwrap();
     db.run_context(|w| {
-        let s = WriteCountedHashSet::new_write(w)?;
+        let s = CountedHashSet::new_write(w)?;
         s.put("x")?;
         s.put("y")?;
         s.put("x")?;
@@ -145,7 +145,7 @@ fn counted_set_track_counts() {
 fn hashset_put_get_remove() {
     let db = open_mem(105).unwrap();
     db.run_context(|w| {
-        let s = WriteHashSet::new_write(w)?;
+        let s = HashSet::new_write(w)?;
         s.put("m")?;
         assert!(s.contains("m")?);
         assert!(!s.contains("n")?);
@@ -195,7 +195,7 @@ fn array_append_get_iter() {
 fn map_iter_yields_all_entries() {
     let db = open_mem(107).unwrap();
     db.run_context(|w| {
-        let m = WriteHashMap::new_write(w)?;
+        let m = HashMap::new_write(w)?;
         for i in 0..5 {
             m.put(&format!("k{i}"), uint(u64::try_from(i).unwrap()))?;
         }
@@ -203,7 +203,7 @@ fn map_iter_yields_all_entries() {
     })
     .unwrap();
     db.run_context(|w| {
-        let m = WriteHashMap::new_write(w)?;
+        let m = HashMap::new_write(w)?;
         let mut pairs = Vec::new();
         for item in m.try_iter()? {
             let kv = item?.read_key_value_pair()?;
@@ -256,7 +256,7 @@ fn clone_freeze_keeps_source_immutable() {
     db.run_context(|w| {
         let history = ArrayList::new_write(w)?;
         history.append_context(Writeable::None, |mc| {
-            let m = WriteHashMap::new_write(mc)?;
+            let m = HashMap::new_write(mc)?;
             let fc = m.put_cursor("fruits")?;
             let fruits = ArrayList::new_write(&fc)?;
             fruits.append(Writeable::Bytes(str_bytes("apple")))?;
@@ -271,7 +271,7 @@ fn clone_freeze_keeps_source_immutable() {
         let history = ArrayList::new_write(w)?;
         let prev = history.get_slot(-1)?;
         history.append_context(Writeable::Slot(prev), |mc| {
-            let m = WriteHashMap::new_write(mc)?;
+            let m = HashMap::new_write(mc)?;
             let fruit_slot = m.get_slot("fruits")?;
             let food_cursor = m.put_cursor("food")?;
             food_cursor.write(Writeable::Slot(fruit_slot))?;
@@ -287,7 +287,7 @@ fn clone_freeze_keeps_source_immutable() {
     db.run_context(|w| {
         let history = ArrayList::new_write(w)?;
         let mc = history.get(-1)?.unwrap();
-        let m = ReadHashMap::new(mc)?;
+        let m = HashMap::new(mc)?;
         let food = ArrayList::new(m.get("food")?.unwrap())?;
         let fruits = ArrayList::new(m.get("fruits")?.unwrap())?;
         assert_eq!(food.count()?, 6);
@@ -301,7 +301,7 @@ fn clone_freeze_keeps_source_immutable() {
 fn stale_write_cursor_is_expired() {
     let db = open_mem(110).unwrap();
     let w = db.root_cursor();
-    let m = WriteHashMap::new_write(&w).unwrap();
+    let m = HashMap::new_write(&w).unwrap();
     m.put("a", uint(1)).unwrap();
     // Non-root cursor from an older transaction.
     let stale = m.put_cursor("b").unwrap();
@@ -344,4 +344,18 @@ fn slot_pointer_round_trip_helpers() {
     };
     assert_eq!(sp.position, Some(20));
     assert_eq!(sp.slot.value, 1);
+}
+
+#[test]
+fn hashmap_same_transaction_reads_observe_writes() {
+    let db = open_mem(921).unwrap();
+    db.run_context(|w| {
+        let map = HashMap::new_write(w)?;
+        map.put("k", Writeable::Uint(7))?;
+        map.put("j", Writeable::Uint(8))?;
+        assert_eq!(map.get("k")?.ok_or(Error::KeyNotFound)?.read_uint()?, 7);
+        assert_eq!(map.get("j")?.ok_or(Error::KeyNotFound)?.read_uint()?, 8);
+        Ok(())
+    })
+    .unwrap();
 }

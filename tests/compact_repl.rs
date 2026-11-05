@@ -6,7 +6,7 @@ use xitdb::cursor::Writeable;
 use xitdb::database::{Database, InitOpts};
 use xitdb::error::Error;
 use xitdb::hasher::Sha1Hasher;
-use xitdb::hashmap::{HashMap, ReadHashMap, WriteHashMap};
+use xitdb::hashmap::HashMap;
 use xitdb::offset_map::{FileOffsetMap, MemoryOffsetMap};
 
 fn open_mem(file_id: u64) -> Result<Database<MemoryCore, Sha1Hasher>, Error> {
@@ -31,7 +31,7 @@ fn build_history(db: &Database<MemoryCore, Sha1Hasher>, moments: u64) -> Result<
             let history = ArrayList::new_write(w)?;
             let prev = history.get_slot(-1)?;
             history.append_context(Writeable::Slot(prev), |mc| {
-                let moment = WriteHashMap::new_write(mc)?;
+                let moment = HashMap::new_write(mc)?;
                 moment.put("gen", uint(m))?;
                 moment.put("shared", uint(99))?;
                 Ok(())
@@ -59,7 +59,7 @@ fn compact_keeps_latest_moment_only() {
             let history = ArrayList::new_write(w)?;
             assert_eq!(history.count()?, 1);
             let mc = history.get(0)?.unwrap();
-            let moment = ReadHashMap::new(mc)?;
+            let moment = HashMap::new(mc)?;
             assert_eq!(moment.get("gen")?.unwrap().read_uint()?, 2);
             assert_eq!(moment.get("shared")?.unwrap().read_uint()?, 99);
             Ok(())
@@ -82,7 +82,7 @@ fn compact_preserves_shared_substructure() {
     db.run_context(|w| {
         let history = ArrayList::new_write(w)?;
         history.append_context(Writeable::None, |mc| {
-            let m = WriteHashMap::new_write(mc)?;
+            let m = HashMap::new_write(mc)?;
             let fc = m.put_cursor("fruits")?;
             let fruits = ArrayList::new_write(&fc)?;
             fruits.append(Writeable::Bytes(b"apple".to_vec()))?;
@@ -105,7 +105,7 @@ fn compact_preserves_shared_substructure() {
         .run_context(|w| {
             let history = ArrayList::new_write(w)?;
             let mc = history.get(0)?.unwrap();
-            let m = ReadHashMap::new(mc)?;
+            let m = HashMap::new(mc)?;
             let fruits = ArrayList::new(m.get("fruits")?.unwrap())?;
             let food = ArrayList::new(m.get("food")?.unwrap())?;
             assert_eq!(fruits.count()?, 1);
@@ -120,7 +120,7 @@ fn compact_preserves_shared_substructure() {
 fn compact_handles_cycles() {
     let db = open_mem(305).unwrap();
     db.run_context(|w| {
-        let m = WriteHashMap::new_write(w)?;
+        let m = HashMap::new_write(w)?;
         let c = m.put_cursor("loop")?;
         // Point "loop" back at the map itself.
         c.write(Writeable::Slot(m.slot()?))?;

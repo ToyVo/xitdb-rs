@@ -8,7 +8,7 @@ use xitdb::cursor::{ContextPart, PathPart, Writeable};
 use xitdb::database::{Database, InitOpts};
 use xitdb::error::Error;
 use xitdb::hasher::{Hasher, Sha1Hasher, bytes_to_id};
-use xitdb::hashmap::{HashMap, WriteHashMap};
+use xitdb::hashmap::HashMap;
 use xitdb::header::{HEADER_LEN, Header};
 use xitdb::linked_arraylist::WriteLinkedArrayList;
 
@@ -63,10 +63,10 @@ fn frozen_map_writes_split_old_and_new() {
                 set: false,
             },
             PathPart::Context(ContextPart::new(|cursor| {
-                let m = WriteHashMap::new_write(cursor)?;
+                let m = HashMap::new_write(cursor)?;
                 m.put("v", int(1))?;
                 let child_cursor = m.put_cursor("child")?;
-                let child = WriteHashMap::new_write(&child_cursor)?;
+                let child = HashMap::new_write(&child_cursor)?;
                 child.put("v", int(2))?;
                 // Pre-freeze read cursors stay valid: old bytes never move.
                 let v_before = m.get("v")?.unwrap();
@@ -78,7 +78,7 @@ fn frozen_map_writes_split_old_and_new() {
                 // ...while the map itself stays writable (copy-on-write).
                 m.put("v", int(3))?;
                 let child_cursor = m.put_cursor("child")?;
-                let child = WriteHashMap::new_write(&child_cursor)?;
+                let child = HashMap::new_write(&child_cursor)?;
                 child.put("v", int(4))?;
                 // Frozen reads see the old values.
                 assert_eq!(v_before.read_int()?, 1);
@@ -131,7 +131,7 @@ fn frozen_byte_writer_rejects_post_freeze_writes() {
         let history = ArrayList::new_write(w)?;
         let mc = history.put_cursor(0)?;
         db.freeze()?;
-        let m = WriteHashMap::new_write(&mc)?;
+        let m = HashMap::new_write(&mc)?;
         m.put("zz", int(1))?;
         Err(Error::ExpectedTxStart)
     })
@@ -149,7 +149,7 @@ fn frozen_byte_writer_rejects_post_freeze_writes() {
 fn panic_in_transaction_rolls_back() {
     let db = open_mem(603).unwrap();
     db.run_context(|w| {
-        let m = WriteHashMap::new_write(w)?;
+        let m = HashMap::new_write(w)?;
         m.put("v", int(1))?;
         Ok(())
     })
@@ -157,7 +157,7 @@ fn panic_in_transaction_rolls_back() {
     let before = db.committed_size().unwrap();
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         db.run_context(|w| {
-            let m = WriteHashMap::new_write(w)?;
+            let m = HashMap::new_write(w)?;
             m.put("v", int(999))?;
             panic!("boom");
         })
@@ -165,7 +165,7 @@ fn panic_in_transaction_rolls_back() {
     assert!(result.is_err());
     assert_eq!(db.committed_size().unwrap(), before);
     db.run_context(|w| {
-        let m = WriteHashMap::new_write(w)?;
+        let m = HashMap::new_write(w)?;
         assert_eq!(m.get("v")?.unwrap().read_int()?, 1);
         Ok(())
     })
@@ -182,7 +182,7 @@ fn expired_cursors_reject_across_transactions() {
     // reachable cursor-expiry path is asserted here.
     let db = open_mem(604).unwrap();
     let w = db.root_cursor();
-    let m = WriteHashMap::new_write(&w).unwrap();
+    let m = HashMap::new_write(&w).unwrap();
     m.put("v", int(1)).unwrap();
     // Non-root cursor from an older transaction.
     let stale = m.put_cursor("w").unwrap();
