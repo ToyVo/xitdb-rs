@@ -22,6 +22,49 @@
 //!     InitOpts { hash_id: None, file_id: None, fsync: true }).unwrap();
 //! ```
 //!
+//! # Using xitdb from async code
+//!
+//! The API is synchronous on purpose: every operation is local file or
+//! memory I/O that completes in microseconds, so there is no async
+//! substrate underneath to expose — an `async` wrapper would just be
+//! `spawn_blocking` with extra steps and extra latency. From async runtimes
+//! (see `examples/rest_server.rs`), move whole transactions onto the
+//! blocking pool and never hold the lock guard across `.await`:
+//!
+//! ```no_run
+//! # #[tokio::main]
+//! # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! use std::sync::{Arc, Mutex};
+//! use xitdb::core::MemoryCore;
+//! use xitdb::cursor::Writeable;
+//! use xitdb::database::{Database, InitOpts};
+//! use xitdb::hasher::Sha1Hasher;
+//!
+//! let db: Database<MemoryCore, Sha1Hasher> = Database::open(
+//!     MemoryCore::new(),
+//!     Sha1Hasher,
+//!     InitOpts { hash_id: None, file_id: None, fsync: false },
+//! )?;
+//! let db = Arc::new(Mutex::new(db));
+//!
+//! let moved = Arc::clone(&db);
+//! let count = tokio::task::spawn_blocking(move || {
+//!     let guard = moved.lock().unwrap_or_else(|e| e.into_inner());
+//!     guard.run_context(|w| {
+//!         w.write(Writeable::Uint(42))?;
+//!         Ok(())
+//!     })?;
+//!     guard.committed_size()
+//! })
+//! .await??;
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! The guard is created and dropped inside the closure, so nothing
+//! blocking is ever held across an await point. One writer at a time
+//! still applies — the mutex provides that.
+//!
 //! # Cloning within a transaction
 //!
 //! Data written earlier in the *same* transaction is temporarily mutable

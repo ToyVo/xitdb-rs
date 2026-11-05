@@ -581,6 +581,8 @@ Only change a replica with `apply_replicated`. If you write to it directly, it n
 
 It is possible to read a database from multiple threads without locks, even while writes are happening. This is a big benefit of immutable databases. However, each thread needs to use its own `Database` instance. Also, keep in mind that writes still need to come from one thread at a time; see the example at the top of this file, where it acquires an exclusive file lock.
 
+Using xitdb from an async runtime? The API is deliberately synchronous — move whole transactions onto the blocking pool with `spawn_blocking` and never hold the lock guard across `.await`. See the crate docs ([Using xitdb from async code](https://docs.rs/xitdb)) and `examples/rest_server.rs` for the pattern.
+
 ## Benchmarks
 
 `benches/ops.rs` measures the hot paths with [Criterion](https://github.com/bheisler/criterion.rs):

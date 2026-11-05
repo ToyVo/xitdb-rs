@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Async integration guide in the crate docs (sync API + `spawn_blocking`
+  pattern, no async wrapper by design)
+
+## [0.2.0] - 2026-11-05
+
 - Collections are single mode-generic structs (`ArrayList<'db, C, H, Mode>`,
   etc.): the `Write*` wrappers, `Deref` impls, and `Read*` aliases are
   removed — **breaking change**, will ship as 0.2.0. `WriteX::new_write`
