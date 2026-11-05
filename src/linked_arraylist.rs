@@ -1,9 +1,10 @@
 use std::cell::Cell;
 use std::marker::PhantomData;
-use std::ops::Deref;
 
 use crate::core::Core;
-use crate::cursor::{ContextPart, Cursor, Iter, PathPart, ReadCursor, WriteCursor, Writeable};
+use crate::cursor::{
+    ContextPart, Cursor, Iter, PathPart, ReadCursor, ReadWrite, WriteCursor, Writeable,
+};
 use crate::error::{Error, Result};
 use crate::hasher::Hasher;
 use crate::slot::Slot;
@@ -81,50 +82,31 @@ impl<'db, C: Core, H: Hasher, Mode> LinkedArrayList<'db, C, H, Mode> {
     }
 }
 
-pub struct WriteLinkedArrayList<'db, C: Core, H: Hasher> {
-    read: LinkedArrayList<'db, C, H, crate::cursor::ReadWrite>,
-    write_cursor: WriteCursor<'db, C, H>,
-}
-
-impl<'db, C: Core, H: Hasher> Deref for WriteLinkedArrayList<'db, C, H> {
-    type Target = LinkedArrayList<'db, C, H, crate::cursor::ReadWrite>;
-    fn deref(&self) -> &Self::Target {
-        &self.read
-    }
-}
-
-impl<'db, C: Core, H: Hasher> WriteLinkedArrayList<'db, C, H> {
+impl<'db, C: Core, H: Hasher> LinkedArrayList<'db, C, H, ReadWrite> {
     /// # Errors
     ///
     /// Propagates cursor and I/O failures.
     pub fn new_write(cursor: &WriteCursor<'db, C, H>) -> Result<Self> {
         let wc = cursor.write_path(&[PathPart::LinkedArrayListInit])?;
-        let read = LinkedArrayList::new(wc.clone())?;
-        Ok(WriteLinkedArrayList {
-            read,
-            write_cursor: wc,
-        })
+        LinkedArrayList::new(wc)
     }
 
-    /// Runs a write path, then refreshes both halves from their stable
-    /// file position. Mirrors Go, where the read/write halves share one
-    /// `SlotPointer` refreshed by `reloadSlot` on every write: file positions
-    /// never move, so a re-read observes earlier writes in the same
-    /// transaction (including frozen copies).
+    /// Runs a write path, then refreshes this cursor from its stable
+    /// file position so later operations start from the collection
+    /// (file positions never move within a transaction).
     /// # Errors
     ///
     /// Propagates cursor and I/O failures.
     fn op(&self, parts: &[PathPart<'_, C, H>]) -> Result<WriteCursor<'db, C, H>> {
-        let c = self.write_cursor.write_path(parts)?;
-        if let Some(pos) = self.write_cursor.slot_ptr.get().position {
-            let slot = self.write_cursor.db.read_slot_at(pos)?;
+        let c = self.cursor.write_path(parts)?;
+        if let Some(pos) = self.cursor.slot_ptr.get().position {
+            let slot = self.cursor.db.read_slot_at(pos)?;
             slot.validate()?;
             let sp = crate::cursor::SlotPointer {
                 position: Some(pos),
                 slot,
             };
-            self.write_cursor.slot_ptr.set(sp);
-            self.read.cursor.slot_ptr.set(sp);
+            self.cursor.slot_ptr.set(sp);
         }
         Ok(c)
     }
@@ -220,5 +202,3 @@ impl<'db, C: Core, H: Hasher> WriteLinkedArrayList<'db, C, H> {
             .map(|_| ())
     }
 }
-
-pub type ReadLinkedArrayList<'db, C, H> = LinkedArrayList<'db, C, H, crate::cursor::ReadOnly>;

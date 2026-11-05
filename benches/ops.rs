@@ -10,7 +10,7 @@ use xitdb::cursor::Writeable;
 use xitdb::database::{Database, InitOpts};
 use xitdb::hasher::Sha1Hasher;
 use xitdb::hashmap::HashMap;
-use xitdb::sorted_map::WriteSortedMap;
+use xitdb::sorted_map::SortedMap;
 
 fn bench_db(file_id: u64) -> Option<Database<MemoryCore, Sha1Hasher>> {
     Database::open(
@@ -149,7 +149,7 @@ fn sorted_put(c: &mut Criterion) {
                 return;
             };
             let outcome = db.run_context(|w| {
-                let map = WriteSortedMap::new_write(w)?;
+                let map = SortedMap::new_write(w)?;
                 for i in 0..500u64 {
                     map.put(&format!("user-{i:05}"), Writeable::Uint(i))?;
                 }
@@ -168,7 +168,7 @@ fn sorted_paginate(c: &mut Criterion) {
         return;
     };
     let seeded = db.run_context(|w| {
-        let map = WriteSortedMap::new_write(w)?;
+        let map = SortedMap::new_write(w)?;
         for i in 0..10_000u64 {
             map.put(&format!("user-{i:05}"), Writeable::Uint(i))?;
         }
@@ -181,7 +181,7 @@ fn sorted_paginate(c: &mut Criterion) {
     c.bench_function("sorted_paginate_100", |b| {
         b.iter(|| {
             let cursor = db.root_cursor();
-            let map = match WriteSortedMap::new_write(&cursor) {
+            let map = match SortedMap::new_write(&cursor) {
                 Ok(map) => map,
                 Err(error) => {
                     eprintln!("bench open failed: {error}");

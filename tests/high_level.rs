@@ -13,8 +13,8 @@ use xitdb::database::{Database, InitOpts, ROOT_HEADER_END, ROOT_HEADER_START};
 use xitdb::error::Error;
 use xitdb::hasher::{Hasher, Sha1Hasher};
 use xitdb::hashmap::HashMap;
-use xitdb::linked_arraylist::{LinkedArrayList, WriteLinkedArrayList};
-use xitdb::sorted_map::{SortedMap, WriteSortedMap};
+use xitdb::linked_arraylist::LinkedArrayList;
+use xitdb::sorted_map::SortedMap;
 
 const fn mem_opts(file_id: u64) -> InitOpts {
     InitOpts {
@@ -217,7 +217,7 @@ fn sorted_user_directory_paginate_and_autocomplete() {
         let idc = moment.put_cursor("id->user")?;
         let id_to_user = HashMap::new_write(&idc)?;
         let uc = moment.put_cursor("username->id")?;
-        let username_to_id = WriteSortedMap::new_write(&uc)?;
+        let username_to_id = SortedMap::new_write(&uc)?;
         for (id, username, name) in users {
             let user_cursor = id_to_user.put_cursor(id)?;
             let user = HashMap::new_write(&user_cursor)?;
@@ -320,7 +320,7 @@ fn all_from_seeks_past_256_element_tiers() {
                 list.append(uint(i))?;
             }
             let kc = m.put_cursor("linked")?;
-            let linked = WriteLinkedArrayList::new_write(&kc)?;
+            let linked = LinkedArrayList::new_write(&kc)?;
             for i in 0..200u64 {
                 linked.append(uint(i))?;
             }

@@ -3,9 +3,9 @@ use xitdb::cursor::Writeable;
 use xitdb::database::{Database, InitOpts};
 use xitdb::error::Error;
 use xitdb::hasher::Sha1Hasher;
-use xitdb::linked_arraylist::{LinkedArrayList, WriteLinkedArrayList};
-use xitdb::sorted_map::WriteSortedMap;
-use xitdb::sorted_set::WriteSortedSet;
+use xitdb::linked_arraylist::LinkedArrayList;
+use xitdb::sorted_map::SortedMap;
+use xitdb::sorted_set::SortedSet;
 
 fn open_mem(file_id: u64) -> Result<Database<MemoryCore, Sha1Hasher>, Error> {
     Database::open(
@@ -31,7 +31,7 @@ fn bytes(s: &str) -> Writeable {
 fn linked_insert_at_zero_preserves_order() {
     let db = open_mem(201).unwrap();
     db.run_context(|w| {
-        let a = WriteLinkedArrayList::new_write(w)?;
+        let a = LinkedArrayList::new_write(w)?;
         a.append(bytes("e"))?;
         for word in ["d", "c", "b", "a"] {
             a.insert(0, bytes(word))?;
@@ -41,7 +41,7 @@ fn linked_insert_at_zero_preserves_order() {
     })
     .unwrap();
     db.run_context(|w| {
-        let a = WriteLinkedArrayList::new_write(w)?;
+        let a = LinkedArrayList::new_write(w)?;
         let mut got = Vec::new();
         for item in a.try_iter()? {
             got.push(item?.read_bytes_alloc()?);
@@ -66,7 +66,7 @@ fn linked_slice_and_concat_round_trip() {
     db.run_context(|w| {
         let m = HashMap::new_write(w)?;
         let ac = m.put_cursor("a")?;
-        let a = WriteLinkedArrayList::new_write(&ac)?;
+        let a = LinkedArrayList::new_write(&ac)?;
         for i in 0..10u64 {
             a.append(uint(i))?;
         }
@@ -74,7 +74,7 @@ fn linked_slice_and_concat_round_trip() {
         assert_eq!(a.count()?, 5);
         assert_eq!(a.get(0)?.unwrap().read_uint()?, 2);
         let bc = m.put_cursor("b")?;
-        let b = WriteLinkedArrayList::new_write(&bc)?;
+        let b = LinkedArrayList::new_write(&bc)?;
         b.append(uint(100))?;
         b.append(uint(101))?;
         a.concat(b.slot()?)?;
@@ -101,7 +101,7 @@ fn linked_slice_and_concat_round_trip() {
 fn linked_remove_and_put() {
     let db = open_mem(203).unwrap();
     db.run_context(|w| {
-        let a = WriteLinkedArrayList::new_write(w)?;
+        let a = LinkedArrayList::new_write(w)?;
         for i in 0..4u64 {
             a.append(uint(i))?;
         }
@@ -119,7 +119,7 @@ fn linked_remove_and_put() {
 fn sorted_iterates_lexicographically() {
     let db = open_mem(204).unwrap();
     db.run_context(|w| {
-        let m = WriteSortedMap::new_write(w)?;
+        let m = SortedMap::new_write(w)?;
         for name in ["dave", "alice", "carol", "bob"] {
             m.put(name, bytes(name))?;
         }
@@ -127,7 +127,7 @@ fn sorted_iterates_lexicographically() {
     })
     .unwrap();
     db.run_context(|w| {
-        let m = WriteSortedMap::new_write(w)?;
+        let m = SortedMap::new_write(w)?;
         assert_eq!(m.count()?, 4);
         let mut keys = Vec::new();
         for item in m.try_iter()? {
@@ -158,7 +158,7 @@ fn sorted_iterates_lexicographically() {
 fn sorted_type_ahead_from_key() {
     let db = open_mem(205).unwrap();
     db.run_context(|w| {
-        let m = WriteSortedMap::new_write(w)?;
+        let m = SortedMap::new_write(w)?;
         for name in ["dave", "alice", "carol", "dan", "bob", "eve"] {
             m.put(name, uint(u64::try_from(name.len()).unwrap()))?;
         }
@@ -166,7 +166,7 @@ fn sorted_type_ahead_from_key() {
     })
     .unwrap();
     db.run_context(|w| {
-        let m = WriteSortedMap::new_write(w)?;
+        let m = SortedMap::new_write(w)?;
         let mut hits = Vec::new();
         for item in m.iter_from(b"da")? {
             let kv = item?.read_key_value_pair()?;
@@ -186,7 +186,7 @@ fn sorted_type_ahead_from_key() {
 fn sorted_pagination_from_index() {
     let db = open_mem(206).unwrap();
     db.run_context(|w| {
-        let m = WriteSortedMap::new_write(w)?;
+        let m = SortedMap::new_write(w)?;
         for name in ["dave", "alice", "carol", "dan", "bob", "eve"] {
             m.put(name, uint(1))?;
         }
@@ -194,7 +194,7 @@ fn sorted_pagination_from_index() {
     })
     .unwrap();
     db.run_context(|w| {
-        let m = WriteSortedMap::new_write(w)?;
+        let m = SortedMap::new_write(w)?;
         // Sorted: alice, bob, carol, dan, dave, eve. Page [2,4) = carol, dan.
         let mut page = Vec::new();
         for item in m.iter_from_index(2)? {
@@ -218,7 +218,7 @@ fn sorted_pagination_from_index() {
 fn sorted_set_basics() {
     let db = open_mem(207).unwrap();
     db.run_context(|w| {
-        let s = WriteSortedSet::new_write(w)?;
+        let s = SortedSet::new_write(w)?;
         s.put("b")?;
         s.put("a")?;
         s.put("a")?;
@@ -242,7 +242,7 @@ fn sorted_set_basics() {
 fn sorted_replace_keeps_count() {
     let db = open_mem(208).unwrap();
     db.run_context(|w| {
-        let m = WriteSortedMap::new_write(w)?;
+        let m = SortedMap::new_write(w)?;
         m.put("k", uint(1))?;
         m.put("k", uint(2))?;
         assert_eq!(m.count()?, 1);

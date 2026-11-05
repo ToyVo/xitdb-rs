@@ -11,7 +11,7 @@ use xitdb::hasher::{Hasher, Sha1Hasher, bytes_to_id, id_to_bytes};
 use xitdb::hashmap::HashMap;
 use xitdb::header::{HEADER_LEN, Header};
 use xitdb::offset_map::{FileOffsetMap, MemoryOffsetMap};
-use xitdb::sorted_map::{ReadSortedMap, WriteSortedMap};
+use xitdb::sorted_map::SortedMap;
 use xitdb::tag::Tag;
 
 fn open_mem(file_id: u64) -> Result<Database<MemoryCore, Sha1Hasher>, Error> {
@@ -291,7 +291,7 @@ fn seed_users(db: &Database<MemoryCore, Sha1Hasher>) -> Result<(), Error> {
         let idc = moment.put_cursor("id->user")?;
         let id_to_user = HashMap::new_write(&idc)?;
         let uc = moment.put_cursor("username->id")?;
-        let username_to_id = WriteSortedMap::new_write(&uc)?;
+        let username_to_id = SortedMap::new_write(&uc)?;
         for (id, username, name) in users {
             let user_cursor = id_to_user.put_cursor(id)?;
             let user = HashMap::new_write(&user_cursor)?;
@@ -321,7 +321,7 @@ fn sorted_pagination() {
 
     let cursor = db.root_cursor();
     let moment = HashMap::new_write(&cursor).unwrap();
-    let username_to_id = ReadSortedMap::new(moment.get("username->id").unwrap().unwrap()).unwrap();
+    let username_to_id = SortedMap::new(moment.get("username->id").unwrap().unwrap()).unwrap();
     assert_eq!(username_to_id.count().unwrap(), 6);
 
     let page_size = 2u64;
@@ -351,7 +351,7 @@ fn sorted_type_ahead() {
 
     let cursor = db.root_cursor();
     let moment = HashMap::new_write(&cursor).unwrap();
-    let username_to_id = ReadSortedMap::new(moment.get("username->id").unwrap().unwrap()).unwrap();
+    let username_to_id = SortedMap::new(moment.get("username->id").unwrap().unwrap()).unwrap();
 
     let walker = username_to_id.iter_from(b"da").unwrap();
     let mut found = Vec::new();

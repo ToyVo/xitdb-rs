@@ -10,7 +10,7 @@ use xitdb::error::Error;
 use xitdb::hasher::{Hasher, Sha1Hasher, bytes_to_id};
 use xitdb::hashmap::HashMap;
 use xitdb::header::{HEADER_LEN, Header};
-use xitdb::linked_arraylist::WriteLinkedArrayList;
+use xitdb::linked_arraylist::LinkedArrayList;
 
 fn open_mem(file_id: u64) -> Result<Database<MemoryCore, Sha1Hasher>, Error> {
     Database::open(
@@ -256,7 +256,7 @@ fn linked_sized_stress() {
     for size in [0u64, 1, 5, 16, 17, 40] {
         let db = open_mem(size.checked_add(606).unwrap()).unwrap();
         db.run_context(|w| {
-            let a = WriteLinkedArrayList::new_write(w)?;
+            let a = LinkedArrayList::new_write(w)?;
             for i in 0..size {
                 a.append(Writeable::Uint(i))?;
             }

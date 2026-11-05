@@ -297,7 +297,7 @@ db.run_context(|w| {
     // the secondary index: a SortedMap ordered alphabetically by username.
     // there's no CREATE INDEX here, so we maintain it ourselves on every write.
     let uc = moment.put_cursor("username->id")?;
-    let username_to_id = WriteSortedMap::new_write(&uc)?;
+    let username_to_id = SortedMap::new_write(&uc)?;
 
     for (id, username, name) in users {
         // write the user into the primary map under its id

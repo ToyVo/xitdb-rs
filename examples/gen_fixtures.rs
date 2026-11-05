@@ -7,8 +7,8 @@ use xitdb::cursor::Writeable;
 use xitdb::database::{Database, InitOpts};
 use xitdb::hasher::Sha1Hasher;
 use xitdb::hashmap::HashMap;
-use xitdb::linked_arraylist::WriteLinkedArrayList;
-use xitdb::sorted_map::WriteSortedMap;
+use xitdb::linked_arraylist::LinkedArrayList;
+use xitdb::sorted_map::SortedMap;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let out = std::env::args().nth(1).ok_or_else(|| {
@@ -50,11 +50,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             list.append(Writeable::Uint(1))?;
             list.append(Writeable::Uint(2))?;
             let sc = m.put_cursor("sorted")?;
-            let sm = WriteSortedMap::new_write(&sc)?;
+            let sm = SortedMap::new_write(&sc)?;
             sm.put("b", Writeable::Uint(2))?;
             sm.put("a", Writeable::Uint(1))?;
             let kc = m.put_cursor("linked")?;
-            let linked = WriteLinkedArrayList::new_write(&kc)?;
+            let linked = LinkedArrayList::new_write(&kc)?;
             linked.append(Writeable::Bytes(b"x".to_vec()))?;
             Ok(())
         })
