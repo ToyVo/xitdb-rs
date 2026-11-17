@@ -5,7 +5,7 @@
 set -euo pipefail
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 
-XITDB_GO_PIN="${XITDB_GO_PIN:-86db69bc728d2e9bdd015f9cefa23df40beaab65}"
+XITDB_GO_PIN="${XITDB_GO_PIN:-7022a848b17712a6f2437b9d569ff27323f69585}"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
