@@ -1,4 +1,4 @@
-//! Writes `tests/fixtures/rust-golden.db` (fixed file id) for the Go
+//! Writes `tests/fixtures/rust-golden.db` (fixed file id) for the Zig
 //! reverse-check in `scripts/gen-fixtures.sh`.
 
 use xitdb::arraylist::ArrayList;

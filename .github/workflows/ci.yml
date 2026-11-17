@@ -31,13 +31,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - uses: actions/setup-go@v5
+      - uses: mlugg/setup-zig@v2
         with:
-          go-version: stable
-      # Regenerates go-golden.db from pinned xitdb-go, rewrites
-      # rust-golden.db, and reverse-verifies the Rust file with Go.
-      # Fails if either direction drifts. (Regenerated files differ in
-      # random commit ids by design, so this gates on the checks passing,
-      # not on byte identity.)
+          version: 0.17.0
+      # Regenerates zig-golden.db from pinned xitdb (Zig, the primary
+      # implementation), rewrites rust-golden.db, and reverse-verifies
+      # the Rust file with Zig. Fails if either direction drifts.
+      # (Regenerated files differ in random commit ids by design, so this
+      # gates on the checks passing, not on byte identity.)
       - run: bash scripts/gen-fixtures.sh
       - run: cargo test --test compat

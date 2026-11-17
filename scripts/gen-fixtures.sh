@@ -1,24 +1,26 @@
 #!/bin/bash
-# Regenerates tests/fixtures/go-golden.db (fixed file id 1234) using a
-# pinned xitdb-go, writes tests/fixtures/rust-golden.db via the Rust
-# example, then reverse-verifies the Rust file with Go.
+# Regenerates tests/fixtures/zig-golden.db (fixed file id 1234) using a
+# pinned xitdb (Zig, the primary implementation), writes
+# tests/fixtures/rust-golden.db via the Rust example, then
+# reverse-verifies the Rust file with Zig.
 set -euo pipefail
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 
-XITDB_GO_PIN="${XITDB_GO_PIN:-7022a848b17712a6f2437b9d569ff27323f69585}"
+XITDB_ZIG_PIN="${XITDB_ZIG_PIN:-274418f6ac1c37bccbe7e8e6f212dc123bca4843}"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
-git clone -q https://github.com/xit-vcs/xitdb-go "$WORK/xitdb-go"
-git -C "$WORK/xitdb-go" checkout -q "$XITDB_GO_PIN"
-mkdir -p "$WORK/xitdb-go/tmpgen" "$WORK/xitdb-go/tmpverify"
-cp "$REPO/scripts/gen-go-golden/main.go" "$WORK/xitdb-go/tmpgen/main.go"
-cp "$REPO/scripts/verify-rust-golden/main.go" "$WORK/xitdb-go/tmpverify/main.go"
+git clone -q https://github.com/xit-vcs/xitdb "$WORK/xitdb"
+git -C "$WORK/xitdb" checkout -q "$XITDB_ZIG_PIN"
+cp "$REPO/scripts/gen-zig-golden/main.zig" "$WORK/xitdb/gen_main.zig"
+cp "$REPO/scripts/verify-rust-golden/main.zig" "$WORK/xitdb/verify_main.zig"
 
-(cd "$WORK/xitdb-go" && go run ./tmpgen "$REPO/tests/fixtures/go-golden.db")
-echo "go-golden.db regenerated"
+(cd "$WORK/xitdb" && zig build-exe gen_main.zig -femit-bin="$WORK/gen-main")
+"$WORK/gen-main" "$REPO/tests/fixtures/zig-golden.db"
+echo "zig-golden.db regenerated"
 
 (cd "$REPO" && cargo run -q --example gen_fixtures -- tests/fixtures/rust-golden.db)
 echo "rust-golden.db regenerated"
 
-(cd "$WORK/xitdb-go" && go run ./tmpverify "$REPO/tests/fixtures/rust-golden.db")
+(cd "$WORK/xitdb" && zig build-exe verify_main.zig -femit-bin="$WORK/verify-main")
+"$WORK/verify-main" "$REPO/tests/fixtures/rust-golden.db"
