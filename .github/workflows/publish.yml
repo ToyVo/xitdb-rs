@@ -1,0 +1,66 @@
+name: publish
+
+# Manual releases: run from the Actions tab (main branch) once CI is
+# green. The workflow verifies CI passed for the checked-out commit,
+# then tags it vX.Y.Z from Cargo.toml and publishes — skipping when the
+# tag already exists, so version bumps are what cut releases.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.ref_name == 'main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Verify CI passed for this commit
+        run: |
+          SHA="$(git rev-parse HEAD)"
+          echo "Checking CI for $SHA"
+          RESULT="$(gh run list --commit "$SHA" --workflow "ci" --limit 1 --json status,conclusion --jq '.[0] | "\(.status) \(.conclusion)"')"
+          if [ "$RESULT" != "completed success" ]; then
+            echo "CI has not passed for $SHA (latest ci run: ${RESULT:-none})."
+            exit 1
+          fi
+          echo "CI passed for $SHA."
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Read crate version
+        id: version
+        run: |
+          VERSION="$(python3 -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"))["package"]["version"])')"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Skip if this version is already released
+        id: check
+        run: |
+          if git ls-remote --tags origin "refs/tags/${{ steps.version.outputs.tag }}" | grep -q .; then
+            echo "Tag ${{ steps.version.outputs.tag }} already exists; nothing to do."
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create and push tag
+        if: steps.check.outputs.exists == 'false'
+        run: |
+          git tag "${{ steps.version.outputs.tag }}"
+          git push origin "${{ steps.version.outputs.tag }}"
+
+      - name: Publish to crates.io
+        if: steps.check.outputs.exists == 'false'
+        run: cargo publish
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
