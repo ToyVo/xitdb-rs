@@ -18,8 +18,8 @@ fn open_mem(file_id: u64) -> Result<Database<MemoryCore, Sha1Hasher>, Error> {
 #[test]
 fn open_empty_has_minimum_committed_size() {
     let db = open_mem(42).unwrap();
-    // 37-byte headers + 25-byte first trailer.
-    assert_eq!(db.committed_size().unwrap(), 62);
+    // 32-byte headers + 25-byte first trailer.
+    assert_eq!(db.committed_size().unwrap(), 57);
 }
 
 #[test]
@@ -61,8 +61,15 @@ fn corrupt_magic_rejected() {
 
 #[test]
 fn truncated_file_rejected() {
+    // A header-only prefix is treated as an interrupted creation and
+    // recreated, so truncate inside committed bytes to get an error.
+    let db = open_mem(1).unwrap();
+    let mut bytes = Vec::new();
+    db.read_committed(0, db.committed_size().unwrap(), &mut bytes)
+        .unwrap();
+    bytes.pop();
     let mut core = MemoryCore::new();
-    core.write(&[0u8; 10]).unwrap();
+    core.write(&bytes).unwrap();
     let res = Database::open(
         core,
         Sha1Hasher,
@@ -91,8 +98,8 @@ fn rollback_leaves_committed_size_unchanged() {
 fn empty_commit_appends_one_trailer() {
     let db = open_mem(11).unwrap();
     db.run_context(|_| Ok(())).unwrap();
-    // scratch copy (9) + trailer (25) past the initial 62.
-    assert_eq!(db.committed_size().unwrap(), 96);
+    // scratch copy (9) + trailer (25) past the initial 57.
+    assert_eq!(db.committed_size().unwrap(), 91);
 }
 
 #[test]

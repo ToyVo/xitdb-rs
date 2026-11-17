@@ -322,7 +322,7 @@ fn init_existing_root_commits_nothing() {
         Ok(())
     })
     .unwrap();
-    assert_eq!(db.committed_size().unwrap(), 256);
+    assert_eq!(db.committed_size().unwrap(), 251);
     // Re-initializing the existing root through a root cursor commits
     // nothing (Go's free re-init shortcut).
     let before = db.committed_size().unwrap();

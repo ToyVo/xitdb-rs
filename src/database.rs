@@ -6,7 +6,7 @@ use crate::core::Core;
 use crate::cursor::{GetTarget, SlotPointer, SortedMapTarget, WriteCursor};
 use crate::error::{Error, Result};
 use crate::hasher::Hasher;
-use crate::header::{HEADER_LEN, Header, MAGIC, VERSION};
+use crate::header::{HEADER_LEN, Header, MAGIC, VERSION, VERSION_V1};
 use crate::slot::{SLOT_LEN, Slot};
 use crate::tag::Tag;
 
@@ -14,17 +14,47 @@ use crate::tag::Tag;
 // position) are denied, so the two spellings are pinned equal by
 // `const_sizes_agree` below instead of converting.
 pub const ROOT_HEADER_START: u64 = 20; // HEADER_LEN
-pub const ROOT_HEADER_LEN: u64 = 17; // SLOT_LEN + 8
-pub const ROOT_HEADER_END: u64 = ROOT_HEADER_START + ROOT_HEADER_LEN;
+/// File size offset for version 2 databases (8-byte aligned).
+pub const FILE_SIZE_START: u64 = 24;
+/// Committed data starts after the v2 root header.
+pub const ROOT_HEADER_END: u64 = 32; // FILE_SIZE_START + 8
+pub const ROOT_HEADER_LEN: u64 = 12; // ROOT_HEADER_END - ROOT_HEADER_START
 pub const ROOT_TRAILER_LEN: u64 = 25; // SLOT_LEN + 16
+/// File size offset / data start for version 1 databases, whose root
+/// header kept an (now ignored) copy of the root slot before the size.
+pub const FILE_SIZE_START_V1: u64 = 29; // ROOT_HEADER_START + SLOT_LEN
+pub const ROOT_HEADER_END_V1: u64 = 37;
+
+/// File size offset for `version` (v1 kept a root slot copy before it).
+#[must_use]
+#[allow(clippy::arithmetic_side_effects)]
+pub const fn file_size_start(version: u16) -> u64 {
+    if version == VERSION_V1 {
+        FILE_SIZE_START_V1
+    } else {
+        FILE_SIZE_START
+    }
+}
+
+/// First committed data byte for `version`.
+#[must_use]
+#[allow(clippy::arithmetic_side_effects)]
+pub const fn data_start(version: u16) -> u64 {
+    file_size_start(version) + 8
+}
+
+/// Minimum committed size for `version` (data start + trailer).
+#[must_use]
+#[allow(clippy::arithmetic_side_effects)]
+pub const fn min_committed(version: u16) -> u64 {
+    data_start(version) + ROOT_TRAILER_LEN
+}
 
 pub const BIT_COUNT: u64 = 4;
 pub const SLOT_COUNT: u64 = 1 << BIT_COUNT;
 pub const MASK: u64 = SLOT_COUNT - 1;
 pub const INDEX_BLOCK_LEN: u64 = crate::codec::INDEX_BLOCK_LEN_U64;
 pub const MAX_BRANCH: u8 = 16;
-const ROOT_FILE_SIZE_OFF: u64 = 29; // ROOT_HEADER_START + SLOT_LEN
-const MIN_COMMITTED: u64 = 62; // ROOT_HEADER_END + ROOT_TRAILER_LEN
 
 #[derive(Debug, Clone, Copy)]
 pub struct InitOpts {
@@ -169,6 +199,37 @@ impl<C: Core, H: Hasher> Database<C, H> {
     pub fn open(mut core: C, hasher: H, opts: InitOpts) -> Result<Self> {
         core.seek_to(0)?;
         let len = core.committed_len()?;
+        // A database whose first commit never finished holds nothing. If it
+        // is no bigger than a new database, it was interrupted while being
+        // created, so it is created again. Otherwise it is an interrupted
+        // full copy (see `apply_replicated`), left for the next sync.
+        let mut len = len;
+        if len > 0 {
+            let probe = Self::read_file_size_at(&mut core)?;
+            if probe == 0 {
+                // Need the header version to size an empty database.
+                let mut hb = [0u8; HEADER_LEN];
+                core.seek_to(0)?;
+                // Short files cannot even hold a header: recreate.
+                if core.read(&mut hb).is_err() {
+                    len = 0;
+                    core.truncate(0)?;
+                } else {
+                    let header = Header::from_bytes(hb);
+                    // Foreign headers still error below; only size known
+                    // versions for the interrupted-creation check.
+                    if header.magic == MAGIC
+                        && (header.version == VERSION || header.version == VERSION_V1)
+                    {
+                        let new_size = codec::add(data_start(header.version), ROOT_TRAILER_LEN)?;
+                        if len <= new_size {
+                            len = 0;
+                            core.truncate(0)?;
+                        }
+                    }
+                }
+            }
+        }
         if len == 0 {
             let file_id = match opts.file_id {
                 Some(id) => id,
@@ -182,19 +243,6 @@ impl<C: Core, H: Hasher> Database<C, H> {
                 version: VERSION,
                 magic: MAGIC,
             };
-            core.seek_to(0)?;
-            core.write(&header.to_bytes())?;
-            // Root header caching an empty root, then the first commit
-            // (id 0), so the file ends with a trailer like any database.
-            core.write(
-                &Slot {
-                    value: 0,
-                    tag: Tag::None,
-                    full: false,
-                }
-                .to_bytes(),
-            )?;
-            core.write(&0u64.to_be_bytes())?;
             let db = Self {
                 core: RefCell::new(core),
                 hasher,
@@ -203,6 +251,10 @@ impl<C: Core, H: Hasher> Database<C, H> {
                 tx_start: RefCell::new(None),
                 epoch: Cell::new(0),
             };
+            db.write_headers()?;
+            // Commit an empty root, so the file ends with a trailer like
+            // after any transaction. The first commit's ID is 0, so a new
+            // database's bytes only depend on its file ID.
             db.commit_root(
                 Slot {
                     value: 0,
@@ -494,12 +546,14 @@ impl<C: Core, H: Hasher> Database<C, H> {
     /// File size from the root header plus the root slot from the
     /// trailer it points to. Rejects truncated/corrupt files.
     pub(crate) fn read_root_header(&self) -> Result<(u64, Slot)> {
+        let version = self.header.get().version;
+        let file_size_start = file_size_start(version);
         let mut core = self.core.borrow_mut();
-        core.seek_to(ROOT_FILE_SIZE_OFF)?;
+        core.seek_to(file_size_start)?;
         let mut b = [0u8; 8];
         core.read(&mut b)?;
         let file_size = u64::from_be_bytes(b);
-        if file_size < MIN_COMMITTED {
+        if file_size < min_committed(version) {
             return Err(Error::InvalidDatabase);
         }
         let len = core.committed_len()?;
@@ -509,6 +563,65 @@ impl<C: Core, H: Hasher> Database<C, H> {
         drop(core);
         let (root, _, _) = self.read_root_trailer(file_size)?;
         Ok((file_size, root))
+    }
+
+    /// Writes the database header and an empty root header. The database
+    /// has no first commit until the root header is given its file size.
+    fn write_headers(&self) -> Result<()> {
+        let version = self.header.get().version;
+        let mut core = self.core.borrow_mut();
+        core.seek_to(0)?;
+        core.write(&self.header.get().to_bytes())?;
+        // Version 1's root header is the biggest; slice it for v2.
+        let zeros = [0u8; 17];
+        let len = codec::usize_from_u64(codec::sub_u64(data_start(version), ROOT_HEADER_START)?)?;
+        core.write(codec::sub(&zeros, 0, len)?)?;
+        Ok(())
+    }
+
+    /// The root header's file size. It is 0 until the first commit or full
+    /// copy has finished, including when the file was cut off before it.
+    fn read_file_size(&self) -> Result<u64> {
+        let version = self.header.get().version;
+        let file_size_start = file_size_start(version);
+        let len = self.core.borrow_mut().committed_len()?;
+        if len < codec::add(file_size_start, 8)? {
+            return Ok(0);
+        }
+        let mut core = self.core.borrow_mut();
+        core.seek_to(file_size_start)?;
+        let mut b = [0u8; 8];
+        core.read(&mut b)?;
+        Ok(u64::from_be_bytes(b))
+    }
+
+    fn read_file_size_at(core: &mut C) -> Result<u64> {
+        let len = core.committed_len()?;
+        // Probe both known layouts; a header-only prefix may be shorter
+        // than the v1 root header.
+        if len < FILE_SIZE_START + 8 {
+            return Ok(0);
+        }
+        // Prefer the v2 offset, falling back to v1 if it looks empty and
+        // the file is big enough to hold a v1 header.
+        core.seek_to(FILE_SIZE_START)?;
+        let mut b = [0u8; 8];
+        if core.read(&mut b).is_err() {
+            return Ok(0);
+        }
+        let v2 = u64::from_be_bytes(b);
+        if v2 != 0 {
+            return Ok(v2);
+        }
+        if len < FILE_SIZE_START_V1 + 8 {
+            return Ok(0);
+        }
+        core.seek_to(FILE_SIZE_START_V1)?;
+        let mut c = [0u8; 8];
+        if core.read(&mut c).is_err() {
+            return Ok(0);
+        }
+        Ok(u64::from_be_bytes(c))
     }
 
     fn read_root_trailer(&self, end: u64) -> Result<(Slot, u64, u64)> {
@@ -536,11 +649,14 @@ impl<C: Core, H: Hasher> Database<C, H> {
         Ok((root, commit_id, checksum))
     }
 
-    fn write_root_header(&self, root: Slot) -> Result<()> {
+    // Points the root header at the trailer that ends the file. Only the
+    // file size is written (at an 8-byte-aligned offset), so a concurrent
+    // read cannot see it half written. The v1 root slot copy is left alone.
+    fn write_root_header(&self) -> Result<()> {
+        let file_size = self.core.borrow_mut().committed_len()?;
+        let version = self.header.get().version;
         let mut core = self.core.borrow_mut();
-        let file_size = core.committed_len()?;
-        core.seek_to(ROOT_HEADER_START)?;
-        core.write(&root.to_bytes())?;
+        core.seek_to(file_size_start(version))?;
         core.write(&file_size.to_be_bytes())?;
         Ok(())
     }
@@ -566,7 +682,7 @@ impl<C: Core, H: Hasher> Database<C, H> {
             // before the data it points to.
             core.sync()?;
         }
-        self.write_root_header(root)
+        self.write_root_header()
     }
 
     pub(crate) fn truncate(&self) -> Result<()> {
@@ -3121,6 +3237,15 @@ impl<C: Core, H: Hasher> Database<C, H> {
     ///
     /// Propagates commit-read and I/O failures.
     pub fn replica_state(&self) -> Result<ReplicaState> {
+        // A full copy that didn't finish has no first commit (see
+        // `apply_replicated`): report an empty state so the next sync
+        // replaces it.
+        if self.read_file_size()? == 0 {
+            return Ok(ReplicaState {
+                committed_size: 0,
+                checksum: 0,
+            });
+        }
         let committed = self.committed_size()?;
         let (_, _, checksum) = self.read_root_trailer(committed)?;
         Ok(ReplicaState {
@@ -3167,17 +3292,18 @@ impl<C: Core, H: Hasher> Database<C, H> {
         if start > end || end > committed {
             return Err(Error::InvalidRange);
         }
-        if start > 0 && start < ROOT_HEADER_END {
+        let version = self.header.get().version;
+        let file_size_start = file_size_start(version);
+        let data_start = data_start(version);
+        if start > 0 && start < data_start {
             return Err(Error::InvalidRange);
         }
         if start == 0 {
-            let (root, _, _) = self.read_root_trailer(end)?;
-            self.stream_bytes(w, 0, ROOT_HEADER_START)?;
-            let mut root_header = vec![0u8; codec::usize_from_u64(ROOT_HEADER_LEN)?];
-            codec::sub_mut(&mut root_header, 0, SLOT_LEN)?.copy_from_slice(&root.to_bytes());
-            codec::sub_mut(&mut root_header, SLOT_LEN, 8)?.copy_from_slice(&end.to_be_bytes());
-            w.write_all(&root_header)?;
-            return self.stream_bytes(w, ROOT_HEADER_END, codec::sub_u64(end, ROOT_HEADER_END)?);
+            // The bytes must end with a trailer.
+            let _ = self.read_root_trailer(end)?;
+            self.stream_bytes(w, 0, file_size_start)?;
+            w.write_all(&end.to_be_bytes())?;
+            return self.stream_bytes(w, data_start, codec::sub_u64(end, data_start)?);
         }
         self.stream_bytes(w, start, codec::sub_u64(end, start)?)
     }
@@ -3207,8 +3333,31 @@ impl<C: Core, H: Hasher> Database<C, H> {
     /// [`Error::Truncated`] for short streams, [`Error::InvalidDatabase`]
     /// for a bad replacement image; propagates I/O failures.
     pub fn apply_replicated(&self, start: u64, r: &mut dyn std::io::Read, len: u64) -> Result<()> {
+        let mut position = start;
         if start == 0 {
+            // The bytes are a different database, with its own header. Its
+            // root header stays empty until the rest has arrived, so a copy
+            // that doesn't finish is a database without a first commit
+            // (see `open`), which the next sync replaces.
+            if len < ROOT_HEADER_START {
+                return Err(Error::InvalidRange);
+            }
+            let mut hb = [0u8; HEADER_LEN];
+            core_read_exact(r, &mut hb)?;
+            let header = Header::from_bytes(hb);
+            header.validate(&self.hasher)?;
+            position = data_start(header.version);
+            if len < position {
+                return Err(Error::InvalidRange);
+            }
             self.core.borrow_mut().truncate(0)?;
+            self.header.set(header);
+            self.write_headers()?;
+            self.core.borrow_mut().sync()?;
+            // The root header that came with the bytes isn't needed.
+            let skip = codec::sub_u64(position, ROOT_HEADER_START)?;
+            let mut discard = vec![0u8; codec::usize_from_u64(skip)?];
+            core_read_exact(r, &mut discard)?;
         } else {
             let committed = self.committed_size()?;
             if start != committed {
@@ -3220,9 +3369,9 @@ impl<C: Core, H: Hasher> Database<C, H> {
         }
         {
             let mut core = self.core.borrow_mut();
-            core.seek_to(start)?;
+            core.seek_to(position)?;
             let mut buf = vec![0u8; 4096];
-            let mut remaining = len;
+            let mut remaining = codec::sub_u64(codec::add(start, len)?, position)?;
             while remaining > 0 {
                 let chunk = codec::usize_from_u64(remaining.min(4096))?;
                 core_read_exact(r, codec::sub_mut(&mut buf, 0, chunk)?)?;
@@ -3230,22 +3379,12 @@ impl<C: Core, H: Hasher> Database<C, H> {
                 remaining = codec::sub_u64(remaining, codec::u64_from_usize(chunk)?)?;
             }
         }
-        if start == 0 {
+        if len > 0 {
+            // The bytes must end with a trailer. Update the root header to
+            // match it.
+            let _ = self.read_root_trailer(codec::add(start, len)?)?;
             self.core.borrow_mut().sync()?;
-            let mut hb = [0u8; HEADER_LEN];
-            {
-                let mut core = self.core.borrow_mut();
-                core.seek_to(0)?;
-                core.read(&mut hb)?;
-            }
-            let header = Header::from_bytes(hb);
-            header.validate(&self.hasher)?;
-            self.header.set(header);
-            self.committed_size()?;
-        } else if len > 0 {
-            let (root, _, _) = self.read_root_trailer(codec::add(start, len)?)?;
-            self.core.borrow_mut().sync()?;
-            self.write_root_header(root)?;
+            self.write_root_header()?;
             self.core.borrow_mut().sync()?;
         }
         Ok(())
@@ -3746,16 +3885,29 @@ mod tests {
         use crate::codec;
         let slot = u64::try_from(SLOT_LEN).unwrap();
         assert_eq!(ROOT_HEADER_START, u64::try_from(HEADER_LEN).unwrap());
-        assert_eq!(ROOT_HEADER_LEN, codec::add(slot, 8).unwrap());
+        assert_eq!(FILE_SIZE_START, 24);
+        assert_eq!(ROOT_HEADER_END, codec::add(FILE_SIZE_START, 8).unwrap());
+        assert_eq!(
+            ROOT_HEADER_LEN,
+            codec::sub_u64(ROOT_HEADER_END, ROOT_HEADER_START).unwrap()
+        );
         assert_eq!(ROOT_TRAILER_LEN, codec::add(slot, 16).unwrap());
         assert_eq!(INDEX_BLOCK_LEN, codec::mul(slot, SLOT_COUNT).unwrap());
         assert_eq!(
-            ROOT_FILE_SIZE_OFF,
+            FILE_SIZE_START_V1,
             codec::add(ROOT_HEADER_START, slot).unwrap()
         );
         assert_eq!(
-            MIN_COMMITTED,
+            ROOT_HEADER_END_V1,
+            codec::add(FILE_SIZE_START_V1, 8).unwrap()
+        );
+        assert_eq!(
+            min_committed(VERSION),
             codec::add(ROOT_HEADER_END, ROOT_TRAILER_LEN).unwrap()
+        );
+        assert_eq!(
+            min_committed(VERSION_V1),
+            codec::add(ROOT_HEADER_END_V1, ROOT_TRAILER_LEN).unwrap()
         );
         assert_eq!(crate::codec::SLOT_LEN_U64, slot);
         assert_eq!(

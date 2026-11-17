@@ -241,7 +241,9 @@ fn open_validates_version_and_keeps_hash_id() {
         Error::InvalidDatabase | Error::InvalidVersion
     ));
     // Truncated images are rejected, not panicked on.
-    assert!(mem_db_open(&image[..10]).is_err());
+    // (A header-only prefix recreates as an interrupted creation, so
+    // truncate inside committed bytes.)
+    assert!(mem_db_open(&image[..image.len() - 1]).is_err());
     // The hash id round-trips through the header (informational on open).
     let header = Header::from_bytes(image[..HEADER_LEN].try_into().unwrap());
     assert_eq!(header.magic, xitdb::header::MAGIC);

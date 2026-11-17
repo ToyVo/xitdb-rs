@@ -2,7 +2,12 @@ use crate::error::{Error, Result};
 use crate::hasher::Hasher;
 
 pub const HEADER_LEN: usize = 20;
-pub const VERSION: u16 = 1;
+// Latest database version. Version 1 files are still supported
+// (their root slot copy is ignored); new files are version 2, which
+// stores the root header's file size at an 8-byte-aligned offset so
+// a concurrent read cannot tear it.
+pub const VERSION: u16 = 2;
+pub const VERSION_V1: u16 = 1;
 pub const MAGIC: [u8; 3] = [0x78, 0x69, 0x74]; // 'xit'
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -79,7 +84,7 @@ impl Header {
         if self.magic != MAGIC {
             return Err(Error::InvalidDatabase);
         }
-        if self.version != VERSION {
+        if self.version != VERSION && self.version != VERSION_V1 {
             return Err(Error::InvalidVersion);
         }
         if usize::from(self.hash_size) != hasher.digest_len() {
@@ -93,7 +98,7 @@ impl Header {
 #[cfg(test)]
 mod tests {
     use crate::hasher::Sha1Hasher;
-    use crate::header::{Header, MAGIC, VERSION};
+    use crate::header::{Header, MAGIC, VERSION, VERSION_V1};
 
     fn sample() -> Header {
         Header {
@@ -129,6 +134,13 @@ mod tests {
         let mut bad_version = sample();
         bad_version.version = VERSION + 1;
         assert!(bad_version.validate(&Sha1Hasher).is_err());
+    }
+
+    #[test]
+    fn header_validate_accepts_v1_for_backward_compat() {
+        let mut v1 = sample();
+        v1.version = VERSION_V1;
+        assert!(v1.validate(&Sha1Hasher).is_ok());
     }
 
     #[test]
